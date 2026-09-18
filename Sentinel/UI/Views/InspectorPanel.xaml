@@ -1,0 +1,414 @@
+<UserControl
+    x:Class="Sentinel.UI.Views.InspectorPanel"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+    xmlns:views="clr-namespace:Sentinel.UI.Views">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Sentinel;component/UI/Themes/SentinelStyles.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <!--  DataContext: DoorInspectorViewModel  -->
+    <Grid>
+        <!--  Nothing / multi-selection  -->
+        <TextBlock
+            Margin="0,20"
+            HorizontalAlignment="Center"
+            Style="{StaticResource CaptionText}"
+            Text="{Binding MultiSelectText}"
+            TextAlignment="Center"
+            Visibility="{Binding HasRow, Converter={StaticResource InverseBoolToVis}}" />
+
+        <StackPanel Visibility="{Binding HasRow, Converter={StaticResource BoolToVis}}">
+
+            <!--  Header  -->
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button
+                        Command="{Binding ZoomCommand}"
+                        Style="{StaticResource IconButton}"
+                        ToolTip="Zoom to the door">
+                        <materialDesign:PackIcon
+                            Width="16"
+                            Height="16"
+                            Kind="CrosshairsGps" />
+                    </Button>
+                    <Button
+                        Command="{Binding SelectComponentsCommand}"
+                        Style="{StaticResource IconButton}"
+                        ToolTip="Select the placed components in Revit">
+                        <materialDesign:PackIcon
+                            Width="16"
+                            Height="16"
+                            Kind="CursorDefaultClickOutline" />
+                    </Button>
+                    <Button
+                        Command="{Binding SelectSourceCommand}"
+                        Style="{StaticResource IconButton}"
+                        ToolTip="Select the source door (linked element)">
+                        <materialDesign:PackIcon
+                            Width="16"
+                            Height="16"
+                            Kind="DoorOpen" />
+                    </Button>
+                </StackPanel>
+                <StackPanel>
+                    <TextBlock
+                        FontSize="18"
+                        Style="{StaticResource PageTitleText}"
+                        Text="{Binding Title}" />
+                    <TextBlock Style="{StaticResource CaptionText}" Text="{Binding Subtitle}" />
+                </StackPanel>
+            </DockPanel>
+            <TextBlock
+                Margin="0,4,0,0"
+                Style="{StaticResource BodyText}"
+                Text="{Binding RoomsText}" />
+
+            <!--  SET  -->
+            <TextBlock Style="{StaticResource SectionCaption}" Text="SET" />
+            <ComboBox
+                DisplayMemberPath="Text"
+                IsEnabled="{Binding IsEditable}"
+                ItemsSource="{Binding SetChoices}"
+                SelectedItem="{Binding SelectedSet}"
+                Style="{StaticResource InputComboBox}" />
+
+            <!--  STATUS  -->
+            <TextBlock Style="{StaticResource SectionCaption}" Text="STATUS" />
+            <StackPanel Orientation="Horizontal">
+                <Ellipse Style="{StaticResource StatusDot}" />
+                <TextBlock
+                    FontWeight="SemiBold"
+                    Style="{StaticResource BodyText}"
+                    Text="{Binding StatusText}" />
+                <TextBlock
+                    Margin="10,0,0,0"
+                    VerticalAlignment="Center"
+                    Style="{StaticResource CaptionText}"
+                    Text="{Binding ReviewText}" />
+            </StackPanel>
+            <ItemsControl Margin="0,4,0,0" ItemsSource="{Binding Issues}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <DockPanel Margin="0,2">
+                            <TextBlock
+                                DockPanel.Dock="Left"
+                                Style="{StaticResource IssueGlyph}"
+                                Text="{Binding Glyph}" />
+                            <TextBlock
+                                FontSize="11.5"
+                                Style="{StaticResource BodyText}"
+                                Text="{Binding Message}" />
+                        </DockPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <StackPanel Visibility="{Binding HasInstance, Converter={StaticResource BoolToVis}}">
+                <!--  ACCESS DIRECTION  -->
+                <TextBlock Style="{StaticResource SectionCaption}" Text="ACCESS DIRECTION" />
+                <DockPanel>
+                    <Button
+                        Command="{Binding FlipCommand}"
+                        DockPanel.Dock="Right"
+                        Style="{StaticResource ActionButton}"
+                        ToolTip="Swap the controlled direction; reader and REX change sides.">
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon
+                                Width="14"
+                                Height="14"
+                                Margin="0,0,5,0"
+                                VerticalAlignment="Center"
+                                Kind="SwapHorizontal" />
+                            <TextBlock Text="Flip" />
+                        </StackPanel>
+                    </Button>
+                    <ComboBox
+                        Margin="0,0,6,0"
+                        DisplayMemberPath="Text"
+                        IsEnabled="{Binding IsEditable}"
+                        ItemsSource="{Binding DirectionChoices}"
+                        SelectedItem="{Binding SelectedDirection}"
+                        Style="{StaticResource InputComboBox}" />
+                </DockPanel>
+                <DockPanel Margin="0,6,0,0">
+                    <Button
+                        Command="{Binding SwapHingeCommand}"
+                        Content="Swap hinge"
+                        DockPanel.Dock="Right"
+                        Style="{StaticResource ActionButton}"
+                        ToolTip="Per-door correction when the hinge side is wrong (IFC doors have no hinge information)." />
+                    <TextBlock
+                        Style="{StaticResource CaptionText}"
+                        Text="{Binding HingeText}"
+                        VerticalAlignment="Center" />
+                </DockPanel>
+
+                <!--  COMPONENTS  -->
+                <TextBlock Style="{StaticResource SectionCaption}" Text="COMPONENTS" />
+                <TextBlock
+                    Margin="0,0,0,4"
+                    Style="{StaticResource CaptionText}"
+                    Text="{Binding OverridesText}" />
+                <ItemsControl ItemsSource="{Binding Components}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border
+                                Margin="0,0,0,6"
+                                Padding="8,6"
+                                Background="{DynamicResource TertiaryBackgroundBrush}"
+                                CornerRadius="5">
+                                <StackPanel>
+                                    <DockPanel>
+                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                            <Button
+                                                Command="{Binding AcceptManualCommand}"
+                                                Style="{StaticResource IconButton}"
+                                                ToolTip="Accept the manual position (stop reporting it)">
+                                                <materialDesign:PackIcon
+                                                    Width="15"
+                                                    Height="15"
+                                                    Kind="CheckDecagramOutline" />
+                                            </Button>
+                                            <Button
+                                                Command="{Binding EditCommand}"
+                                                Style="{StaticResource IconButton}"
+                                                ToolTip="Edit this component for this door (override)">
+                                                <materialDesign:PackIcon
+                                                    Width="15"
+                                                    Height="15"
+                                                    Kind="PencilOutline" />
+                                            </Button>
+                                            <Button
+                                                Command="{Binding RemoveCommand}"
+                                                Style="{StaticResource IconButton}"
+                                                ToolTip="Remove from this door"
+                                                Visibility="{Binding IsRemoved, Converter={StaticResource InverseBoolToVis}}">
+                                                <materialDesign:PackIcon
+                                                    Width="15"
+                                                    Height="15"
+                                                    Kind="MinusCircleOutline" />
+                                            </Button>
+                                            <Button
+                                                Command="{Binding RestoreCommand}"
+                                                Style="{StaticResource IconButton}"
+                                                ToolTip="Restore this template component"
+                                                Visibility="{Binding IsRemoved, Converter={StaticResource BoolToVis}}">
+                                                <materialDesign:PackIcon
+                                                    Width="15"
+                                                    Height="15"
+                                                    Kind="Restore" />
+                                            </Button>
+                                        </StackPanel>
+                                        <TextBlock Style="{StaticResource StateGlyph}" Text="{Binding StateGlyph}" />
+                                        <StackPanel>
+                                            <TextBlock
+                                                FontWeight="SemiBold"
+                                                Style="{StaticResource BodyText}"
+                                                Text="{Binding Label}" />
+                                            <TextBlock Style="{StaticResource CaptionText}" Text="{Binding StateText}" />
+                                        </StackPanel>
+                                    </DockPanel>
+                                    <TextBlock
+                                        Margin="18,2,0,0"
+                                        Style="{StaticResource CaptionText}"
+                                        Text="{Binding ComponentName}" />
+                                    <TextBlock
+                                        Margin="18,2,0,0"
+                                        Foreground="{DynamicResource AccentBrush}"
+                                        Style="{StaticResource CaptionText}"
+                                        Text="{Binding Tags}"
+                                        Visibility="{Binding Tags, Converter={StaticResource NotEmptyToVis}}" />
+                                    <TextBlock
+                                        Margin="18,2,0,0"
+                                        Style="{StaticResource CaptionText}"
+                                        Text="{Binding Explanation}"
+                                        ToolTip="{Binding PlacementNotes}" />
+                                    <TextBlock
+                                        Margin="18,2,0,0"
+                                        Foreground="{DynamicResource ErrorBrush}"
+                                        Style="{StaticResource CaptionText}"
+                                        Text="{Binding IssuesText}"
+                                        Visibility="{Binding HasIssues, Converter={StaticResource BoolToVis}}" />
+
+                                    <!--  Inline override editor  -->
+                                    <Border
+                                        Margin="0,8,0,0"
+                                        Padding="8"
+                                        Background="{DynamicResource SecondaryBackgroundBrush}"
+                                        CornerRadius="4"
+                                        Visibility="{Binding IsEditing, Converter={StaticResource BoolToVis}}">
+                                        <StackPanel>
+                                            <DockPanel Margin="0,0,0,4">
+                                                <TextBlock Style="{StaticResource LabelText}" Text="Component" />
+                                                <ComboBox
+                                                    DisplayMemberPath="Name"
+                                                    ItemsSource="{Binding ComponentChoices}"
+                                                    SelectedItem="{Binding EditComponent}"
+                                                    Style="{StaticResource InputComboBox}" />
+                                            </DockPanel>
+                                            <views:RuleEditorControl DataContext="{Binding Editor}" ShowDuplicateOption="False" />
+                                            <StackPanel
+                                                Margin="0,8,0,0"
+                                                HorizontalAlignment="Right"
+                                                Orientation="Horizontal">
+                                                <Button
+                                                    Command="{Binding ResetCommand}"
+                                                    Content="Reset to set type"
+                                                    Style="{StaticResource ActionButton}" />
+                                                <Button
+                                                    Command="{Binding EditCommand}"
+                                                    Content="Cancel"
+                                                    Style="{StaticResource ActionButton}" />
+                                                <Button
+                                                    Margin="0"
+                                                    Command="{Binding ApplyCommand}"
+                                                    Content="Apply to this door"
+                                                    Style="{StaticResource PrimaryButton}" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <DockPanel Margin="0,2,0,0">
+                    <Button
+                        Margin="6,0,0,0"
+                        Command="{Binding AddComponentCommand}"
+                        DockPanel.Dock="Right"
+                        Style="{StaticResource ActionButton}">
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon
+                                Width="14"
+                                Height="14"
+                                Margin="0,0,5,0"
+                                VerticalAlignment="Center"
+                                Kind="Plus" />
+                            <TextBlock Text="Add Component" />
+                        </StackPanel>
+                    </Button>
+                    <ComboBox
+                        DisplayMemberPath="Name"
+                        IsEnabled="{Binding IsEditable}"
+                        ItemsSource="{Binding AddChoices}"
+                        SelectedItem="{Binding SelectedAdd}"
+                        Style="{StaticResource InputComboBox}" />
+                </DockPanel>
+
+                <!--  ACTIONS  -->
+                <TextBlock Style="{StaticResource SectionCaption}" Text="PLACEMENT" />
+                <WrapPanel>
+                    <Button
+                        Margin="0,0,6,6"
+                        Command="{Binding PreviewCommand}"
+                        Content="Preview"
+                        Style="{StaticResource PrimaryButton}" />
+                    <Button
+                        Margin="0,0,6,6"
+                        Command="{Binding PlaceCommand}"
+                        Content="Place"
+                        Style="{StaticResource ActionButton}" />
+                    <Button
+                        Margin="0,0,6,6"
+                        Command="{Binding UpdateCommand}"
+                        Content="Update placement…"
+                        Style="{StaticResource ActionButton}" />
+                    <Button
+                        Margin="0,0,6,6"
+                        Command="{Binding MarkReviewedCommand}"
+                        Content="Mark reviewed"
+                        Style="{StaticResource ActionButton}" />
+                    <Button
+                        Margin="0,0,6,6"
+                        Command="{Binding DeleteComponentsCommand}"
+                        Content="Delete components"
+                        Style="{StaticResource ActionButton}" />
+                </WrapPanel>
+            </StackPanel>
+
+            <!--  SOURCE  -->
+            <TextBlock Style="{StaticResource SectionCaption}" Text="SOURCE" />
+            <Border
+                Margin="0,0,0,6"
+                Padding="8,6"
+                Background="{DynamicResource BannerBackgroundBrush}"
+                CornerRadius="4"
+                Visibility="{Binding HasSourceChange, Converter={StaticResource BoolToVis}}">
+                <StackPanel>
+                    <TextBlock
+                        FontSize="11.5"
+                        Style="{StaticResource BodyText}"
+                        Text="{Binding SourceChangeText, StringFormat=Source door changed: {0}}" />
+                    <Button
+                        Margin="0,6,0,0"
+                        HorizontalAlignment="Left"
+                        Command="{Binding AcceptSourceCommand}"
+                        Content="Accept source changes"
+                        Style="{StaticResource ActionButton}" />
+                </StackPanel>
+            </Border>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="90" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <TextBlock Style="{StaticResource LabelText}" Text="Link" />
+                <TextBlock Grid.Column="1" Style="{StaticResource BodyText}" Text="{Binding LinkText}" />
+                <TextBlock Grid.Row="1" Style="{StaticResource LabelText}" Text="Type" />
+                <TextBlock Grid.Row="1" Grid.Column="1" Style="{StaticResource BodyText}" Text="{Binding TypeText}" />
+                <TextBlock Grid.Row="2" Style="{StaticResource LabelText}" Text="Level" />
+                <TextBlock Grid.Row="2" Grid.Column="1" Style="{StaticResource BodyText}" Text="{Binding LevelText}" />
+                <TextBlock Grid.Row="3" Style="{StaticResource LabelText}" Text="Size" />
+                <TextBlock Grid.Row="3" Grid.Column="1" Style="{StaticResource BodyText}" Text="{Binding SizeText}" />
+                <TextBlock Grid.Row="4" Style="{StaticResource LabelText}" Text="Wall" />
+                <TextBlock Grid.Row="4" Grid.Column="1" Style="{StaticResource BodyText}" Text="{Binding WallText}" />
+                <TextBlock Grid.Row="5" Style="{StaticResource LabelText}" Text="IFC GlobalId" />
+                <TextBox
+                    Grid.Row="5"
+                    Grid.Column="1"
+                    Margin="-4,1,0,1"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    IsReadOnly="True"
+                    Style="{StaticResource InputTextBox}"
+                    Text="{Binding GuidText, Mode=OneWay}" />
+                <TextBlock Grid.Row="6" Style="{StaticResource LabelText}" Text="Geometry" />
+                <TextBlock Grid.Row="6" Grid.Column="1" Style="{StaticResource BodyText}" Text="{Binding GeometryText}" />
+                <TextBlock Grid.Row="7" Style="{StaticResource LabelText}" Text="Parameters" VerticalAlignment="Top" />
+                <TextBlock Grid.Row="7" Grid.Column="1" Style="{StaticResource CaptionText}" Text="{Binding ParametersText}" />
+            </Grid>
+            <TextBlock
+                Margin="0,4,0,0"
+                Foreground="{DynamicResource WarningBrush}"
+                Style="{StaticResource CaptionText}"
+                Text="{Binding ReadWarningsText}"
+                Visibility="{Binding ReadWarningsText, Converter={StaticResource NotEmptyToVis}}" />
+
+            <!--  NOTES  -->
+            <StackPanel Visibility="{Binding HasInstance, Converter={StaticResource BoolToVis}}">
+                <TextBlock Style="{StaticResource SectionCaption}" Text="NOTES" />
+                <TextBox
+                    IsEnabled="{Binding IsEditable}"
+                    Style="{StaticResource MultiLineTextBox}"
+                    Text="{Binding Notes, UpdateSourceTrigger=LostFocus}" />
+            </StackPanel>
+        </StackPanel>
+    </Grid>
+</UserControl>

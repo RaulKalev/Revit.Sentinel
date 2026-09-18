@@ -1,0 +1,140 @@
+<UserControl
+    x:Class="Sentinel.UI.Views.RuleEditorControl"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    x:Name="Root">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Sentinel;component/UI/Themes/SentinelStyles.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <!--  DataContext: PlacementRuleEditor  -->
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" MinWidth="90" />
+            <ColumnDefinition Width="14" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" MinWidth="90" />
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Style="{StaticResource LabelText}" Text="Reference" />
+        <ComboBox
+            Grid.Column="1"
+            Margin="0,2"
+            DisplayMemberPath="Text"
+            ItemsSource="{Binding References}"
+            SelectedItem="{Binding Reference}"
+            Style="{StaticResource InputComboBox}"
+            ToolTip="Point along the door width the along-wall offset is measured from." />
+
+        <TextBlock
+            Grid.Column="3"
+            Style="{StaticResource LabelText}"
+            Text="Side" />
+        <ComboBox
+            Grid.Column="4"
+            Margin="0,2"
+            DisplayMemberPath="Text"
+            ItemsSource="{Binding Sides}"
+            SelectedItem="{Binding Side}"
+            Style="{StaticResource InputComboBox}"
+            ToolTip="Unsecured/secured follow the access direction (Flip Set swaps them). Side A/B are fixed door sides." />
+
+        <TextBlock
+            Grid.Row="1"
+            Style="{StaticResource LabelText}"
+            Text="Along wall (mm)" />
+        <TextBox
+            Grid.Row="1"
+            Grid.Column="1"
+            Margin="0,2"
+            Style="{StaticResource InputTextBox}"
+            Text="{Binding AlongWall, UpdateSourceTrigger=LostFocus, ValidatesOnDataErrors=True}"
+            ToolTip="From the jamb: positive = outwards, away from the opening; negative = over the door leaf. From the centre: positive = towards the hinge." />
+
+        <TextBlock
+            Grid.Row="1"
+            Grid.Column="3"
+            Style="{StaticResource LabelText}"
+            Text="From wall (mm)" />
+        <TextBox
+            Grid.Row="1"
+            Grid.Column="4"
+            Margin="0,2"
+            Style="{StaticResource InputTextBox}"
+            Text="{Binding FromWall, UpdateSourceTrigger=LostFocus, ValidatesOnDataErrors=True}"
+            ToolTip="Distance from the wall face into the room (in wall: from the wall centre towards side A)." />
+
+        <TextBlock
+            Grid.Row="2"
+            Style="{StaticResource LabelText}"
+            Text="Height (mm)" />
+        <TextBox
+            Grid.Row="2"
+            Grid.Column="1"
+            Margin="0,2"
+            Style="{StaticResource InputTextBox}"
+            Text="{Binding Height, UpdateSourceTrigger=LostFocus, ValidatesOnDataErrors=True}"
+            ToolTip="Mounting height. Leave blank to use the component's default height." />
+
+        <TextBlock
+            Grid.Row="2"
+            Grid.Column="3"
+            Style="{StaticResource LabelText}"
+            Text="Measured" />
+        <ComboBox
+            Grid.Row="2"
+            Grid.Column="4"
+            Margin="0,2"
+            DisplayMemberPath="Text"
+            ItemsSource="{Binding HeightReferences}"
+            SelectedItem="{Binding HeightRef}"
+            Style="{StaticResource InputComboBox}" />
+
+        <TextBlock
+            Grid.Row="3"
+            Style="{StaticResource LabelText}"
+            Text="Orientation" />
+        <ComboBox
+            Grid.Row="3"
+            Grid.Column="1"
+            Margin="0,2"
+            DisplayMemberPath="Text"
+            ItemsSource="{Binding Orientations}"
+            SelectedItem="{Binding Orientation}"
+            Style="{StaticResource InputComboBox}" />
+
+        <TextBlock
+            Grid.Row="3"
+            Grid.Column="3"
+            Style="{StaticResource LabelText}"
+            Text="Rotation (°)" />
+        <TextBox
+            Grid.Row="3"
+            Grid.Column="4"
+            Margin="0,2"
+            Style="{StaticResource InputTextBox}"
+            Text="{Binding Rotation, UpdateSourceTrigger=LostFocus, ValidatesOnDataErrors=True}"
+            ToolTip="Extra rotation (counter-clockwise). For 'Fixed rotation' this is the full angle from the side A normal." />
+
+        <CheckBox
+            Grid.Row="4"
+            Grid.ColumnSpan="5"
+            Margin="0,6,0,0"
+            Content="Duplicate on the other side when access is controlled in both directions"
+            IsChecked="{Binding DuplicateBoth}"
+            Style="{StaticResource InputCheckBox}"
+            Visibility="{Binding ShowDuplicateOption, ElementName=Root, Converter={StaticResource BoolToVis}}" />
+    </Grid>
+</UserControl>

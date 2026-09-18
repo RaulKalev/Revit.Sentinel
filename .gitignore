@@ -1,0 +1,97 @@
+## .NET / C#
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.rsuser
+
+# Build results
+[Dd]ebugPublic/
+[Rr]eleases/
+*.[Cc]ache
+*.ilk
+*.meta
+*.obj
+*.iobj
+*.pch
+*.pdb
+*.ipdb
+*.pgc
+*.pgd
+*.rsp
+*.sbr
+*.tlb
+*.tli
+*.tlh
+*.tmp
+*.tmp_proj
+*_i.c
+*_p.c
+*_h.h
+*.log
+*.vspscc
+*.vssscc
+.builds
+*.pidb
+*.svclog
+*.scc
+
+# NuGet
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+*.nupkg
+*.snupkg
+**/[Pp]ackages/*.config
+nuget.exe
+*.nuget.props
+*.nuget.targets
+
+# MSBuild
+*.DotSettings.user
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# Fody
+FodyWeavers.xsd
+
+# Rider / JetBrains
+.idea/
+*.sln.iml
+
+# Temporary files
+*_wpftmp.csproj
+
+# OS files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+.DS_Store
+
+# Test / tooling output
+TestResults/
+*.binlog
+coverage*/
+Tests/UiHarness/out/
+
+# Machine-specific tool settings (local permissions, paths)
+.claude/settings.local.json
+.vscode/
