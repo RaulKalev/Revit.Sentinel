@@ -48,8 +48,10 @@ namespace Sentinel.Revit.Preview
             var service = ExternalServiceRegistry.GetService(ExternalServices.BuiltInExternalServices.DirectContext3DService) as MultiServerService;
             if (service == null) throw new InvalidOperationException("DirectContext3D service is not available.");
 
+            // Replace a server left over from an earlier window session (e.g. unregister failed).
+            if (service.GetServer(ServerId) != null) service.RemoveServer(ServerId);
             var server = new PreviewGraphicsServer();
-            if (service.GetServer(ServerId) == null) service.AddServer(server);
+            service.AddServer(server);
 
             var active = service.GetActiveServerIds();
             if (!active.Contains(ServerId))

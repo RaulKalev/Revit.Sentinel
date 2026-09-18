@@ -1,0 +1,59 @@
+name: Build and test
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore Sentinel.sln
+
+      - name: Unit tests (Sentinel.Core, net8.0 + net48)
+        run: dotnet test Tests/Sentinel.Core.Tests/Sentinel.Core.Tests.csproj --configuration Release --no-restore
+
+      - name: Build Revit 2024 (net48) and Revit 2026 (net8.0-windows)
+        run: dotnet build Sentinel/Sentinel.csproj --configuration Release --no-restore
+
+      - name: Build UI harness
+        run: dotnet build Tests/UiHarness/UiHarness.csproj --configuration Release --no-restore
+
+      - name: Run UI harness (fake host, no Revit)
+        # WPF rendering on hosted runners is best effort; failures are visible in the uploaded log.
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $out = Join-Path $pwd "Tests/UiHarness/out"
+          $p = Start-Process -FilePath "Tests/UiHarness/bin/Release/net8.0-windows/UiHarness.exe" -ArgumentList "`"$out`"" -PassThru -Wait
+          Get-Content (Join-Path $out "harness-log.txt") -TotalCount 60
+          exit $p.ExitCode
+
+      - name: Upload harness output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-harness
+          path: Tests/UiHarness/out
+          if-no-files-found: ignore
+
+      - name: Upload plugin builds
+        uses: actions/upload-artifact@v4
+        with:
+          name: sentinel-plugin
+          path: |
+            Sentinel/bin/Release/net48/Sentinel.dll
+            Sentinel/bin/Release/net8.0-windows/Sentinel.dll
+            Deploy/*.addin

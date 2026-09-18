@@ -91,6 +91,7 @@ namespace Sentinel.Revit.Placement
             }
 
             var pending = new List<Action>();
+            var toRecord = new List<Func<Action>>(); // poses are read after one regeneration per door
             var componentFailures = new List<string>();
             var warnings = new List<string>();
             var createdOrMoved = 0;
@@ -125,7 +126,9 @@ namespace Sentinel.Revit.Placement
                                 {
                                     MoveUnhosted(doc, existingElement, item.Target);
                                     createdOrMoved++;
-                                    pending.Add(RecordPlaced(ctx, inst, item, existingElement, item.Existing.PlacedHosting, "Moved", item.Existing.Id));
+                                    var movedItem = item;
+                                    var movedElement = existingElement;
+                                    toRecord.Add(() => RecordPlaced(ctx, inst, movedItem, movedElement, movedItem.Existing.PlacedHosting, "Moved", movedItem.Existing.Id));
                                     break;
                                 }
                                 // Hosted elements cannot be moved off their face: recreate.
@@ -141,8 +144,9 @@ namespace Sentinel.Revit.Placement
                                     string hosting;
                                     var created = CreateComponent(ctx, inst, def, item.Target, componentId, warnings, out hosting);
                                     createdOrMoved++;
-                                    pending.Add(RecordPlaced(ctx, inst, item, created, hosting,
-                                        item.Action == DiffAction.Create ? "Created" : "Recreated", componentId));
+                                    var createdItem = item;
+                                    var verb = item.Action == DiffAction.Create ? "Created" : "Recreated";
+                                    toRecord.Add(() => RecordPlaced(ctx, inst, createdItem, created, hosting, verb, componentId));
                                 }
                                 catch (ComponentPlacementException cex)
                                 {
@@ -154,6 +158,9 @@ namespace Sentinel.Revit.Placement
                                 break;
                         }
                     }
+
+                    doc.Regenerate();
+                    foreach (var r in toRecord) pending.Add(r());
 
                     var status = t.Commit();
                     if (status != TransactionStatus.Committed)

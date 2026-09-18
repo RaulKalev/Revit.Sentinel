@@ -24,6 +24,9 @@ namespace Sentinel
                 .SetContextualHelp("https://github.com/RaulKalev/Revit.Sentinel");
 
             SentinelLog.Info("Sentinel " + typeof(App).Assembly.GetName().Version + " loaded.");
+
+            // Inert unless SENTINEL_SELFTEST_OUTPUT is set (Tools/Run-RevitSelfTest.ps1).
+            Diagnostics.SelfTest.TryAttach(application);
             return Result.Succeeded;
         }
 

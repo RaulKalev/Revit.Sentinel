@@ -147,7 +147,14 @@ namespace Sentinel.UI.ViewModels
             try
             {
                 var inst = Current;
+                // Rows that were in preview go back to their normal status.
+                var previous = _main.Session.PreviewInstanceIds.Where(id => inst == null || id != inst.Id).ToList();
                 _main.Session.PreviewInstanceIds.Clear();
+                foreach (var id in previous)
+                {
+                    var prevRow = _doors.FindRow(id);
+                    if (prevRow != null) prevRow.Update();
+                }
                 Placements.Clear();
                 SetChoices.Clear();
                 if (inst == null)

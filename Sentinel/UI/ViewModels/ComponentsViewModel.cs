@@ -209,8 +209,8 @@ namespace Sentinel.UI.ViewModels
         public void OnProjectLoaded()
         {
             var id = _selected?.Id;
-            RefreshList();
             _selected = null;
+            RefreshList();
             Selected = Items.FirstOrDefault(c => c.Id == id) ?? Items.FirstOrDefault();
         }
 
@@ -222,11 +222,8 @@ namespace Sentinel.UI.ViewModels
 
         private void RefreshList()
         {
-            var sel = _selected;
-            Items.Clear();
-            foreach (var c in Project.ComponentDefinitions.OrderBy(c => c.Name)) Items.Add(c);
-            _selected = sel;
-            OnPropertyChanged(nameof(Selected));
+            CollectionSync.Sync(Items, Project.ComponentDefinitions.OrderBy(c => c.Name).ToList());
+            CollectionViewSource.GetDefaultView(Items).Refresh(); // redraw renamed items
         }
 
         private void LoadFamilies()
@@ -265,6 +262,7 @@ namespace Sentinel.UI.ViewModels
             }
             _loading = false;
             RefreshAll();
+            RelayCommand.Requery();
         }
 
         internal void OnEdited(string reason)

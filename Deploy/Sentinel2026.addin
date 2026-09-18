@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!--
+  Sentinel for Revit 2026 (.NET 8).
+  Copy to %ProgramData%\Autodesk\Revit\Addins\2026\ (all users) or %AppData%\Autodesk\Revit\Addins\2026\ (current user)
+  and point <Assembly> to the net8.0-windows build of Sentinel.dll (single merged DLL):
+    Sentinel\bin\Release\net8.0-windows\Sentinel.dll
+-->
+<RevitAddIns>
+  <AddIn Type="Application">
+    <Name>Sentinel</Name>
+    <Assembly>C:\Path\To\Sentinel\net8.0-windows\Sentinel.dll</Assembly>
+    <FullClassName>Sentinel.App</FullClassName>
+    <AddInId>8E2B7C41-5A93-4F0D-B6E1-3C9D2A7F5E18</AddInId>
+    <VendorId>RaulKalev</VendorId>
+    <VendorDescription>Raul Kalev (RK Tools)</VendorDescription>
+  </AddIn>
+</RevitAddIns>

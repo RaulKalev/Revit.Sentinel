@@ -226,7 +226,7 @@
                         Style="{StaticResource SentinelGrid}">
                         <DataGrid.Columns>
                             <DataGridTemplateColumn
-                                Width="128"
+                                Width="148"
                                 Header="Status"
                                 SortMemberPath="StatusText">
                                 <DataGridTemplateColumn.CellTemplate>
@@ -292,7 +292,7 @@
                                 Binding="{Binding ComponentsText}"
                                 Header="Parts" />
                             <DataGridTextColumn
-                                Width="84"
+                                Width="94"
                                 Binding="{Binding ReviewText}"
                                 Header="Review" />
                             <DataGridTemplateColumn

@@ -94,6 +94,28 @@ namespace Sentinel.UI.Mvvm
         public static string Format(double? value) => value.HasValue ? Format(value.Value) : "";
     }
 
+    /// <summary>
+    /// Brings an ObservableCollection to a desired content/order with Insert/Move/Remove only. Unlike Clear()+Add,
+    /// items that stay keep their identity, so a bound Selector does not push SelectedItem = null into the view model.
+    /// </summary>
+    public static class CollectionSync
+    {
+        public static void Sync<T>(System.Collections.ObjectModel.ObservableCollection<T> target, IList<T> desired)
+        {
+            var keep = new HashSet<T>(desired);
+            for (int i = target.Count - 1; i >= 0; i--)
+                if (!keep.Contains(target[i])) target.RemoveAt(i);
+
+            for (int i = 0; i < desired.Count; i++)
+            {
+                var item = desired[i];
+                var current = target.IndexOf(item);
+                if (current < 0) target.Insert(i, item);
+                else if (current != i) target.Move(current, i);
+            }
+        }
+    }
+
     public static class Choices
     {
         public static List<Option<T>> Of<T>(params Tuple<T, string>[] items) =>

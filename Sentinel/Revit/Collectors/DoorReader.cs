@@ -98,6 +98,12 @@ namespace Sentinel.Revit.Collectors
                 var s = q != null && q.HasValue && q.StorageType == StorageType.String ? q.AsString() : null;
                 if (!string.IsNullOrWhiteSpace(s)) return s.Trim();
             }
+
+            // IFC links: the door code (IfcDoor.Name, e.g. "D-102") is the element name; Mark is often empty.
+            var elementName = e.Name;
+            var typeName = (e.Document.GetElement(e.GetTypeId()) as ElementType)?.Name;
+            if (!string.IsNullOrWhiteSpace(elementName) && !string.Equals(elementName, typeName, StringComparison.OrdinalIgnoreCase))
+                return elementName.Trim();
             return null;
         }
 

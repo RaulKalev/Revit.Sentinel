@@ -153,9 +153,8 @@ namespace Sentinel.UI.ViewModels
         public void OnProjectLoaded()
         {
             var id = _selected?.Id;
-            Definitions.Clear();
-            foreach (var d in Project.DoorSetDefinitions.OrderBy(d => d.Code, StringComparer.OrdinalIgnoreCase)) Definitions.Add(d);
             _selected = null;
+            RefreshList();
             Selected = Definitions.FirstOrDefault(d => d.Id == id) ?? Definitions.FirstOrDefault();
             OnPropertyChanged(nameof(ComponentChoices));
         }
@@ -169,11 +168,8 @@ namespace Sentinel.UI.ViewModels
 
         private void RefreshList()
         {
-            var sel = _selected;
-            Definitions.Clear();
-            foreach (var d in Project.DoorSetDefinitions.OrderBy(d => d.Code, StringComparer.OrdinalIgnoreCase)) Definitions.Add(d);
-            _selected = sel;
-            OnPropertyChanged(nameof(Selected));
+            CollectionSync.Sync(Definitions, Project.DoorSetDefinitions.OrderBy(d => d.Code, StringComparer.OrdinalIgnoreCase).ToList());
+            System.Windows.Data.CollectionViewSource.GetDefaultView(Definitions).Refresh(); // redraw renamed items
         }
 
         private void LoadEditor()
@@ -185,6 +181,7 @@ namespace Sentinel.UI.ViewModels
             _loading = false;
             if (SelectedAdd == null) SelectedAdd = ComponentChoices.FirstOrDefault();
             RefreshAll();
+            RelayCommand.Requery();
         }
 
         internal void OnEdited(string reason)

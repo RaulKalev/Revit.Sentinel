@@ -24,7 +24,8 @@ namespace Sentinel.UI
     /// </summary>
     public class ThemeManager
     {
-        private static readonly string PrefsPath = Path.Combine(
+        /// <summary>Preferences file. Overridable so test harnesses never touch the user's real preferences.</summary>
+        public static string PrefsPath { get; set; } = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RK Tools", "Sentinel", "ui.json");
 
         private readonly Window _window;

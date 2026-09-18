@@ -205,8 +205,7 @@ namespace Sentinel.UI.ViewModels
         public void ReloadDefinitions()
         {
             var current = AssignDefinition?.Id;
-            Definitions.Clear();
-            foreach (var d in Project.DoorSetDefinitions.OrderBy(d => d.Code, StringComparer.OrdinalIgnoreCase)) Definitions.Add(d);
+            CollectionSync.Sync(Definitions, Project.DoorSetDefinitions.OrderBy(d => d.Code, StringComparer.OrdinalIgnoreCase).ToList());
             AssignDefinition = Definitions.FirstOrDefault(d => d.Id == current) ?? Definitions.FirstOrDefault();
         }
 
@@ -275,7 +274,9 @@ namespace Sentinel.UI.ViewModels
         }
 
         /// <summary>Verifies sources and placed components, then updates all rows.</summary>
-        public void RefreshStatus(Action after)
+        /// <param name="after">Continuation after the rows were updated.</param>
+        /// <param name="leadMessage">Optional text shown before the refresh summary (e.g. a placement result).</param>
+        public void RefreshStatus(Action after, string leadMessage = null, bool leadIsError = false)
         {
             _main.BeginBusy("Checking door sets…");
             _main.Host.Refresh(r =>
@@ -298,7 +299,9 @@ namespace Sentinel.UI.ViewModels
                 var missingSources = r.Sources.Values.Count(s => s.State == SourceState.Missing);
                 if (missingSources > 0) parts.Add(missingSources + " orphaned");
                 parts.AddRange(r.Messages);
-                _main.SetStatus(string.Join(" • ", parts) + ".", r.MissingComponents > 0 || missingSources > 0);
+                var text = string.Join(" • ", parts) + ".";
+                if (!string.IsNullOrEmpty(leadMessage)) text = leadMessage + "   |   " + text;
+                _main.SetStatus(text, leadIsError || r.MissingComponents > 0 || missingSources > 0);
                 after?.Invoke();
             });
         }
@@ -690,7 +693,7 @@ namespace Sentinel.UI.ViewModels
                     _main.Dialogs.Show(mode == PlacementMode.Update ? "Update placement" : "Placement result",
                         result.Summary, details.Length > 0 ? details.ToString() : null, isError);
                 }
-                RefreshStatus(() => after?.Invoke(result));
+                RefreshStatus(() => after?.Invoke(result), result.Summary, isError);
             });
         }
 
@@ -731,6 +734,9 @@ namespace Sentinel.UI.ViewModels
         }
 
         public DoorRowViewModel FindRow(string instanceId) => Rows.FirstOrDefault(r => r.Instance != null && r.Instance.Id == instanceId);
+
+        /// <summary>Selects rows by door key (the view applies it to the grid).</summary>
+        public void SelectKeys(IEnumerable<string> keys) => RestoreSelectionRequested?.Invoke(this, keys.ToList());
     }
 
     /// <summary>Natural string order ("D2" before "D10").</summary>

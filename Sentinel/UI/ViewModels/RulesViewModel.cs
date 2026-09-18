@@ -140,8 +140,8 @@ namespace Sentinel.UI.ViewModels
 
         public void OnProjectLoaded()
         {
-            RefreshList();
             _selected = null;
+            RefreshList();
             Selected = Rules.FirstOrDefault();
         }
 
@@ -160,11 +160,8 @@ namespace Sentinel.UI.ViewModels
 
         private void RefreshList()
         {
-            var sel = _selected;
-            Rules.Clear();
-            foreach (var r in Project.AssignmentRules.OrderBy(r => r.Priority).ThenBy(r => r.Name)) Rules.Add(r);
-            _selected = sel;
-            OnPropertyChanged(nameof(Selected));
+            CollectionSync.Sync(Rules, Project.AssignmentRules.OrderBy(r => r.Priority).ThenBy(r => r.Name).ToList());
+            System.Windows.Data.CollectionViewSource.GetDefaultView(Rules).Refresh(); // redraw renamed items
         }
 
         private void LoadEditor()
@@ -179,6 +176,7 @@ namespace Sentinel.UI.ViewModels
             _loading = false;
             TestResult = null;
             RefreshAll();
+            RelayCommand.Requery();
         }
 
         internal void OnEdited()

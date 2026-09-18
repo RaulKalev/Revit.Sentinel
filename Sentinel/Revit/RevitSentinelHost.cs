@@ -99,7 +99,7 @@ namespace Sentinel.Revit
             Run("Load", app => LoadNow(), done, ex => OperationResult.Fail("Loading Sentinel data failed: " + ex.Message));
         }
 
-        private OperationResult LoadNow()
+        internal OperationResult LoadNow()
         {
             var payload = SentinelProjectStorage.Read(_doc);
             _storageId = SentinelProjectStorage.Find(_doc)?.Id;
@@ -140,7 +140,7 @@ namespace Sentinel.Revit
         }
 
         /// <summary>Writes the project in its own transaction. Must run in API context, outside other transactions.</summary>
-        private OperationResult SaveNow(string reason)
+        internal OperationResult SaveNow(string reason)
         {
             if (IsReadOnly) return OperationResult.Fail("Project data is read-only (saved by a newer Sentinel).");
             var payload = SentinelProjectSerializer.ToPayload(Project, Environment.UserName, _pluginVersion);
@@ -241,7 +241,7 @@ namespace Sentinel.Revit
             Run("Place", app => PlaceNow(request), done, ex => new PlacementBatchResult { FatalError = ex.Message });
         }
 
-        private PlacementBatchResult PlaceNow(PlacementRequest request)
+        internal PlacementBatchResult PlaceNow(PlacementRequest request)
         {
             var batch = new PlacementBatchResult();
             if (IsReadOnly)
@@ -466,13 +466,9 @@ namespace Sentinel.Revit
                     preview.Clear();
                     preview.Unregister();
                     try { app.ActiveUIDocument?.RefreshActiveView(); } catch { }
-                    _queue.Dispose();
                 });
             }
-            else
-            {
-                _queue.Enqueue("Dispose", app => _queue.Dispose());
-            }
+            // The ExternalEvent is not disposed from inside its own handler; it is released with the host.
         }
 
         private void OnDocumentClosing(object sender, DocumentClosingEventArgs e)
