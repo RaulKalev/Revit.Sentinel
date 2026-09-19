@@ -17,6 +17,9 @@ namespace Sentinel.Core.Placement
         public HingeSide? HingeOverride { get; set; }
         public List<EffectiveComponent> Components { get; set; } = new List<EffectiveComponent>();
         public SentinelSettings Settings { get; set; } = new SentinelSettings();
+
+        /// <summary>Library lookup (names of carrier components in messages). Optional.</summary>
+        public Func<string, ComponentDefinition> FindComponent { get; set; }
     }
 
     /// <summary>
@@ -42,7 +45,8 @@ namespace Sentinel.Core.Placement
                 AccessDirection = instance != null ? instance.AccessDirection : AccessDirection.SideAToSideB,
                 HingeOverride = instance?.HingeSideOverride,
                 Components = components,
-                Settings = project.Settings ?? new SentinelSettings()
+                Settings = project.Settings ?? new SentinelSettings(),
+                FindComponent = project.FindComponent
             });
             if (definition == null && instance != null && !string.IsNullOrEmpty(instance.DefinitionId))
             {
@@ -122,6 +126,8 @@ namespace Sentinel.Core.Placement
                     plan.Placements.Add(Place(comp, rule, side, isMirror, door, n, w, halfWidth, halfWall, hingeSign));
                 }
             }
+
+            ResolveBuiltIn(plan, input, door, w, hingeSign);
 
             plan.ConfigurationHash = ComputeHash(plan.Placements);
             return plan;
@@ -253,7 +259,7 @@ namespace Sentinel.Core.Placement
                 p.Issues.Add(new StatusIssue(IssueSeverity.Error, IssueCodes.ComponentDefinitionMissing,
                     p.Label + ": component definition no longer exists in the library.", p.SlotKey));
             }
-            else if (!def.IsFamilyConfigured)
+            else if (!def.IsBuiltIn && !def.IsFamilyConfigured)
             {
                 p.Issues.Add(new StatusIssue(IssueSeverity.Error, IssueCodes.FamilyNotConfigured,
                     def.Name + " family not configured (Components page).", p.SlotKey));
@@ -267,6 +273,80 @@ namespace Sentinel.Core.Placement
             }
 
             return p;
+        }
+
+        /// <summary>
+        /// Components modelled inside another component's family (a lock inside a magnet contact) get no element of
+        /// their own: they are bound to the carrier's placement and choose the carrier parameter for their side.
+        /// Left/right is seen from the front of the carrier (the side Revit's Front view looks at). Without a carrier
+        /// in the set, the component falls back to its own family when allowed, otherwise it is reported.
+        /// </summary>
+        private static void ResolveBuiltIn(PlacementPlan plan, DoorPlacementInput input, DoorGeometry door, Vec3 w, double hingeSign)
+        {
+            var defs = (input.Components ?? new List<EffectiveComponent>())
+                .Where(c => c?.Component != null)
+                .GroupBy(c => c.ComponentDefinitionId)
+                .ToDictionary(g => g.Key, g => g.First().Component);
+            Func<string, ComponentDefinition> find = id =>
+            {
+                ComponentDefinition d;
+                if (!string.IsNullOrEmpty(id) && defs.TryGetValue(id, out d)) return d;
+                return input.FindComponent != null && !string.IsNullOrEmpty(id) ? input.FindComponent(id) : null;
+            };
+
+            foreach (var p in plan.Placements)
+            {
+                var def = find(p.ComponentDefinitionId);
+                if (def == null || !def.IsBuiltIn) continue;
+
+                var carrierDef = find(def.CarrierComponentId);
+                var carrierName = carrierDef?.Name ?? "the carrier component";
+                var carrier = carrierDef == null || carrierDef.IsBuiltIn
+                    ? null
+                    : plan.Placements
+                        .Where(c => c != p && c.ComponentDefinitionId == def.CarrierComponentId)
+                        .OrderBy(c => c.IsMirrorCopy == p.IsMirrorCopy ? 0 : 1)
+                        .FirstOrDefault();
+
+                string why = null;
+                if (string.IsNullOrWhiteSpace(def.CarrierComponentId)) why = "no carrier component is chosen (Components page)";
+                else if (string.IsNullOrWhiteSpace(def.CarrierParameterLeft) || string.IsNullOrWhiteSpace(def.CarrierParameterRight))
+                    why = "the left/right parameters of " + carrierName + " are not set (Components page)";
+                else if (carrier == null) why = "this door set has no " + carrierName;
+
+                if (why == null)
+                {
+                    // Which side of the door the component is on (along the wall), falling back to the latch side.
+                    var along = (p.Position - door.Origin).Dot(w);
+                    var towards = Math.Abs(along) > 1.0 ? w * Math.Sign(along) : w * -hingeSign;
+                    // Right, for a viewer facing the carrier's front: up × facing.
+                    var right = Vec3.UnitZ.Cross(carrier.Facing.Flatten().Normalize());
+                    var isRight = towards.Dot(right) > 0;
+                    if (def.SwapCarrierSides) isRight = !isRight;
+
+                    p.CarrierSlotKey = carrier.SlotKey;
+                    p.CarrierLabel = carrier.Label;
+                    p.CarrierParameter = isRight ? def.CarrierParameterRight.Trim() : def.CarrierParameterLeft.Trim();
+                    p.CarrierOtherParameter = isRight ? def.CarrierParameterLeft.Trim() : def.CarrierParameterRight.Trim();
+                    p.FamilyName = null;
+                    p.TypeName = null;
+                    p.Explanation += " → built into " + carrier.Label + ": “" + p.CarrierParameter + "” on (" +
+                                     (isRight ? "right" : "left") + " of the " + carrier.Label + " seen from its front)";
+                    continue;
+                }
+
+                if (def.UseOwnFamilyAsBackup && def.IsFamilyConfigured)
+                {
+                    p.Issues.Add(new StatusIssue(IssueSeverity.Info, IssueCodes.BuiltInFallback,
+                        p.Label + ": placed as its own family because " + why + ".", p.SlotKey));
+                }
+                else
+                {
+                    p.Issues.Add(new StatusIssue(IssueSeverity.Error, IssueCodes.BuiltInUnavailable,
+                        p.Label + ": cannot be built into " + carrierName + " because " + why +
+                        (def.IsFamilyConfigured ? "" : ". Map its own family as a backup") + ".", p.SlotKey));
+                }
+            }
         }
 
         private static string Explain(CalculatedPlacement p, PlacementRule rule, double mount)
@@ -331,7 +411,10 @@ namespace Sentinel.Core.Placement
                   .Append(Math.Round(p.Position.X).ToString("0", inv)).Append(',')
                   .Append(Math.Round(p.Position.Y).ToString("0", inv)).Append(',')
                   .Append(Math.Round(p.Position.Z).ToString("0", inv)).Append('|')
-                  .Append(Math.Round(p.InstanceRotationDeg, 1).ToString("0.0", inv)).Append(';');
+                  .Append(Math.Round(p.InstanceRotationDeg, 1).ToString("0.0", inv));
+                // Only built-in components add fields, so hashes of existing placements stay the same.
+                if (p.IsBuiltIn) sb.Append("|in:").Append(p.CarrierSlotKey).Append('|').Append(p.CarrierParameter);
+                sb.Append(';');
             }
             using (var sha = SHA1.Create())
             {

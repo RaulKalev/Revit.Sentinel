@@ -83,7 +83,7 @@
                                     DockPanel.Dock="Right"
                                     Style="{StaticResource Badge.Error}"
                                     ToolTip="No Revit family type mapped – components of this kind cannot be placed"
-                                    Visibility="{Binding IsFamilyConfigured, Converter={StaticResource InverseBoolToVis}}">
+                                    Visibility="{Binding IsModelled, Converter={StaticResource InverseBoolToVis}}">
                                     <StackPanel Orientation="Horizontal">
                                         <materialDesign:PackIcon
                                             Width="11"
@@ -102,7 +102,7 @@
                                     <TextBlock
                                         Margin="0,1,0,0"
                                         Style="{StaticResource Type.Secondary}"
-                                        Text="{Binding FamilyDisplay}"
+                                        Text="{Binding ModellingDisplay}"
                                         TextTrimming="CharacterEllipsis"
                                         TextWrapping="NoWrap" />
                                 </StackPanel>
@@ -171,11 +171,138 @@
                             Style="{StaticResource Input.Text}"
                             Text="{Binding Description, UpdateSourceTrigger=LostFocus}" />
 
-                        <!--  Family mapping  -->
+                        <!--  How the component exists in Revit  -->
+                        <TextBlock
+                            Margin="0,24,0,4"
+                            Style="{StaticResource Type.Section}"
+                            Text="How it is modelled" />
+                        <TextBlock
+                            Margin="0,0,0,10"
+                            Style="{StaticResource Type.Secondary}"
+                            Text="As its own family, or as part of another component's family that is switched on with a Yes/No parameter (for example a lock inside the magnet contact)." />
+                        <Border
+                            HorizontalAlignment="Left"
+                            AutomationProperties.Name="How it is modelled"
+                            Style="{StaticResource Segmented}">
+                            <StackPanel Orientation="Horizontal">
+                                <RadioButton
+                                    Content="Its own family"
+                                    GroupName="Modelling"
+                                    IsChecked="{Binding IsOwnFamily}"
+                                    Style="{StaticResource Segment}" />
+                                <RadioButton
+                                    Content="Part of another component"
+                                    GroupName="Modelling"
+                                    IsChecked="{Binding IsBuiltIn}"
+                                    Style="{StaticResource Segment}" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border
+                            Margin="0,12,0,0"
+                            ui:Motion.FromY="-4"
+                            ui:Motion.Reveal="True"
+                            Style="{StaticResource Card}"
+                            Visibility="{Binding IsBuiltIn, Converter={StaticResource BoolToVis}}">
+                            <StackPanel>
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="Carried by" />
+                                <ComboBox
+                                    Margin="0,0,0,12"
+                                    AutomationProperties.Name="Carried by"
+                                    DisplayMemberPath="Name"
+                                    ItemsSource="{Binding CarrierChoices}"
+                                    SelectedItem="{Binding Carrier}"
+                                    Style="{StaticResource Input.Combo}"
+                                    ToolTip="The component whose Revit family contains this one" />
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="12" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock Style="{StaticResource FieldLabel}" Text="Parameter when on the left" />
+                                        <TextBox
+                                            AutomationProperties.Name="Yes/No parameter when on the left"
+                                            Style="{StaticResource Input.Text}"
+                                            Tag="e.g. Lukk vasakul"
+                                            Text="{Binding CarrierParameterLeft, UpdateSourceTrigger=LostFocus}"
+                                            ToolTip="Yes/No instance parameter of the carrier family" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2">
+                                        <TextBlock Style="{StaticResource FieldLabel}" Text="Parameter when on the right" />
+                                        <TextBox
+                                            AutomationProperties.Name="Yes/No parameter when on the right"
+                                            Style="{StaticResource Input.Text}"
+                                            Tag="e.g. Lukk paremal"
+                                            Text="{Binding CarrierParameterRight, UpdateSourceTrigger=LostFocus}"
+                                            ToolTip="Yes/No instance parameter of the carrier family" />
+                                    </StackPanel>
+                                </Grid>
+                                <TextBlock
+                                    Margin="0,6,0,0"
+                                    Style="{StaticResource Type.Caption}"
+                                    Text="Left and right as seen from the front of the carrier family (Revit's Front view). The other side's parameter is switched off." />
+                                <CheckBox
+                                    Margin="0,10,0,0"
+                                    Content="The family defines left and right the other way round"
+                                    IsChecked="{Binding SwapCarrierSides}"
+                                    Style="{StaticResource Input.Check}" />
+                                <CheckBox
+                                    Margin="0,6,0,0"
+                                    Content="Use the own family below when a door set has no carrier"
+                                    IsChecked="{Binding UseOwnFamilyAsBackup}"
+                                    Style="{StaticResource Input.Check}" />
+
+                                <!--  What will happen, in words; amber until the setup is complete  -->
+                                <Border
+                                    Margin="0,12,0,0"
+                                    Padding="10,8"
+                                    CornerRadius="{StaticResource Radius.Control}">
+                                    <Border.Style>
+                                        <Style TargetType="{x:Type Border}">
+                                            <Setter Property="Background" Value="{DynamicResource Status.Info.Subtle}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding BuiltInIsOk}" Value="False">
+                                                    <Setter Property="Background" Value="{DynamicResource Status.Warning.Subtle}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <DockPanel>
+                                        <materialDesign:PackIcon
+                                            Width="15"
+                                            Height="15"
+                                            Margin="0,1,8,0"
+                                            VerticalAlignment="Top">
+                                            <materialDesign:PackIcon.Style>
+                                                <Style TargetType="{x:Type materialDesign:PackIcon}">
+                                                    <Setter Property="Kind" Value="InformationOutline" />
+                                                    <Setter Property="Foreground" Value="{DynamicResource Status.Info}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding BuiltInIsOk}" Value="False">
+                                                            <Setter Property="Kind" Value="AlertOutline" />
+                                                            <Setter Property="Foreground" Value="{DynamicResource Status.Warning}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </materialDesign:PackIcon.Style>
+                                        </materialDesign:PackIcon>
+                                        <TextBlock
+                                            AutomationProperties.LiveSetting="Polite"
+                                            Style="{StaticResource Type.Secondary}"
+                                            Foreground="{DynamicResource Text.Primary}"
+                                            Text="{Binding BuiltInSummary}" />
+                                    </DockPanel>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+
+                        <!--  Family mapping (the backup for built-in components)  -->
                         <TextBlock
                             Margin="0,24,0,10"
                             Style="{StaticResource Type.Section}"
-                            Text="Revit family type" />
+                            Text="{Binding FamilySectionTitle}" />
                         <Border Padding="12,10">
                             <Border.Style>
                                 <Style TargetType="{x:Type Border}">

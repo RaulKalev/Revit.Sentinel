@@ -48,6 +48,40 @@ namespace Sentinel.Core.Models
 
         public List<ParameterAssignment> Parameters { get; set; } = new List<ParameterAssignment>();
 
+        // ---- built into another component's family ----
+        public ComponentModelling Modelling { get; set; } = ComponentModelling.OwnFamily;
+
+        /// <summary>Component whose family contains this one (e.g. the magnet contact that carries the lock).</summary>
+        public string CarrierComponentId { get; set; }
+
+        /// <summary>Yes/No instance parameter of the carrier switched on when this component is on its left (seen from the front).</summary>
+        public string CarrierParameterLeft { get; set; }
+
+        /// <summary>Yes/No instance parameter switched on when this component is on the carrier's right.</summary>
+        public string CarrierParameterRight { get; set; }
+
+        /// <summary>The carrier family defines left and right the other way round.</summary>
+        public bool SwapCarrierSides { get; set; }
+
+        /// <summary>When the door set has no carrier, place this component as its own family (if one is mapped).</summary>
+        public bool UseOwnFamilyAsBackup { get; set; } = true;
+
+        [JsonIgnore]
+        public bool IsBuiltIn => Modelling == ComponentModelling.BuiltIntoOtherComponent;
+
+        [JsonIgnore]
+        public bool IsBuiltInConfigured => IsBuiltIn && !string.IsNullOrWhiteSpace(CarrierComponentId) &&
+                                           !string.IsNullOrWhiteSpace(CarrierParameterLeft) && !string.IsNullOrWhiteSpace(CarrierParameterRight);
+
+        /// <summary>Has everything it needs to be placed: its own family, or a complete built-in setup.</summary>
+        [JsonIgnore]
+        public bool IsModelled => IsBuiltIn ? IsBuiltInConfigured : IsFamilyConfigured;
+
+        /// <summary>Short description for lists: the family, or the carrier parameters.</summary>
+        [JsonIgnore]
+        public string ModellingDisplay => !IsBuiltIn ? FamilyDisplay :
+            IsBuiltInConfigured ? "Built in: “" + CarrierParameterLeft + "” / “" + CarrierParameterRight + "”" : "Built in (not set up)";
+
         [JsonIgnore]
         public bool IsFamilyConfigured =>
             !string.IsNullOrWhiteSpace(FamilyName) && !string.IsNullOrWhiteSpace(TypeName);

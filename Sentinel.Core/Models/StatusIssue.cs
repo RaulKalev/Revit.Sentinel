@@ -23,6 +23,8 @@ namespace Sentinel.Core.Models
         public const string DuplicateElement = "DuplicateElement";
         public const string HostingFallback = "HostingFallback";
         public const string ParameterNotWritten = "ParameterNotWritten";
+        public const string BuiltInFallback = "BuiltInFallback";
+        public const string BuiltInUnavailable = "BuiltInUnavailable";
     }
 
     public class StatusIssue

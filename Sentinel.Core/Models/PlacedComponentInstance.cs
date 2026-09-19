@@ -59,6 +59,25 @@ namespace Sentinel.Core.Models
 
         public string LastError { get; set; }
 
+        /// <summary>Built into another component: <see cref="ElementUniqueId"/> is the carrier element.</summary>
+        [Newtonsoft.Json.JsonIgnore]
+        public bool IsBuiltIn => BuiltInHosting.Is(PlacedHosting);
+
         public PlacedComponentInstance Clone() => (PlacedComponentInstance)MemberwiseClone();
+    }
+
+    /// <summary>
+    /// <see cref="PlacedComponentInstance.PlacedHosting"/> value of a component switched on by a parameter of another
+    /// component's element ("BuiltIn:Lukk paremal"). Such records share the carrier's element and must never delete it.
+    /// </summary>
+    public static class BuiltInHosting
+    {
+        public const string Prefix = "BuiltIn:";
+
+        public static string For(string parameterName) => Prefix + parameterName;
+
+        public static bool Is(string hosting) => hosting != null && hosting.StartsWith(Prefix, System.StringComparison.Ordinal);
+
+        public static string ParameterOf(string hosting) => Is(hosting) ? hosting.Substring(Prefix.Length) : null;
     }
 }

@@ -40,6 +40,19 @@ namespace Sentinel.Core.Models
         Custom
     }
 
+    /// <summary>How a component exists in Revit.</summary>
+    public enum ComponentModelling
+    {
+        /// <summary>Its own family instance (default).</summary>
+        OwnFamily,
+
+        /// <summary>
+        /// Part of another component's family, switched on with a Yes/No instance parameter (e.g. a magnet contact whose
+        /// family contains the lock, toggled by "Lukk vasakul" / "Lukk paremal").
+        /// </summary>
+        BuiltIntoOtherComponent
+    }
+
     /// <summary>How a component is created in Revit.</summary>
     public enum HostBehavior
     {

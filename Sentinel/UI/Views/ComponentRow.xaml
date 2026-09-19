@@ -89,6 +89,21 @@
                     </Border>
                     <Border
                         Margin="0,0,4,0"
+                        Style="{StaticResource Badge}"
+                        ToolTip="{Binding FamilyText}"
+                        Visibility="{Binding IsBuiltIn, Converter={StaticResource BoolToVis}}">
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon
+                                Width="11"
+                                Height="11"
+                                Margin="0,0,3,0"
+                                VerticalAlignment="Center"
+                                Kind="PuzzleOutline" />
+                            <TextBlock Text="Built in" />
+                        </StackPanel>
+                    </Border>
+                    <Border
+                        Margin="0,0,4,0"
                         Style="{StaticResource Badge.Accent}"
                         ToolTip="Added on this door only"
                         Visibility="{Binding IsAdded, Converter={StaticResource BoolToVis}}">
@@ -158,6 +173,13 @@
                         </TextBlock.Style>
                     </TextBlock>
                 </DockPanel>
+                <!--  Built in: which parameter of which component carries it  -->
+                <TextBlock
+                    Margin="0,4,0,0"
+                    Style="{StaticResource Type.Caption}"
+                    Text="{Binding FamilyText}"
+                    TextWrapping="Wrap"
+                    Visibility="{Binding IsBuiltIn, Converter={StaticResource BoolToVis}}" />
                 <!--  A missing family blocks placement, so it is never hidden  -->
                 <TextBlock
                     Margin="0,4,0,0"

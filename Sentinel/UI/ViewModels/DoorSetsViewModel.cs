@@ -69,9 +69,19 @@ namespace Sentinel.UI.ViewModels
         }
 
         public string FamilyText => Component == null ? "Component definition missing" :
+            Component.IsBuiltIn ? BuiltInText(Component) :
             Component.IsFamilyConfigured ? Component.FamilyDisplay : "No Revit family mapped (Components page)";
 
-        public bool IsFamilyMissing => Component == null || !Component.IsFamilyConfigured;
+        public bool IsFamilyMissing => Component == null || !Component.IsModelled;
+
+        private string BuiltInText(ComponentDefinition c)
+        {
+            if (!c.IsBuiltInConfigured) return "Part of another component – not set up yet (Components page)";
+            var carrier = _owner.Project.FindComponent(c.CarrierComponentId);
+            var inSet = carrier != null && _owner.Rows.Any(r => r.Component != null && r.Component.Id == carrier.Id);
+            return "Built into " + (carrier?.Name ?? "another component") + " (“" + c.CarrierParameterLeft + "” / “" + c.CarrierParameterRight + "”)" +
+                   (inSet ? "" : c.UseOwnFamilyAsBackup && c.IsFamilyConfigured ? " – this set has none, so its own family is used" : " – this set has no " + (carrier?.Name ?? "carrier"));
+        }
 
         /// <summary>One-line placement summary for the collapsed row.</summary>
         public string Summary => UiChoices.RuleSummary(Editor.ToRule() ?? Slot.Rule, Component?.DefaultMountingHeightMm);

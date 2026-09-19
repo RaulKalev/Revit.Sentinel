@@ -48,6 +48,19 @@ namespace Sentinel.Core.Placement
         /// <summary>Human readable reason for this location (traceability).</summary>
         public string Explanation { get; set; }
 
+        // ---- built into another component (no element of its own) ----
+        /// <summary>Slot of the component whose family contains this one; null = placed as its own family.</summary>
+        public string CarrierSlotKey { get; set; }
+        public string CarrierLabel { get; set; }
+
+        /// <summary>Yes/No parameter switched on on the carrier (e.g. "Lukk paremal").</summary>
+        public string CarrierParameter { get; set; }
+
+        /// <summary>The opposite side's parameter, switched off.</summary>
+        public string CarrierOtherParameter { get; set; }
+
+        public bool IsBuiltIn => !string.IsNullOrEmpty(CarrierSlotKey);
+
         public List<StatusIssue> Issues { get; set; } = new List<StatusIssue>();
 
         public bool HasErrors => Issues.Any(i => i.Severity == IssueSeverity.Error);

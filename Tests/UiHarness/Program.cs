@@ -334,6 +334,67 @@ namespace Sentinel.UiHarness
             Gallery.Capture(window, "18_doors_two_links");
             Select(doors, "D104");
 
+            // ---------------------------------------------------------------- lock built into the magnet contact
+            var contactDef = main.Session.Project.ComponentDefinitions.First(c => c.Category == ComponentCategory.DoorContact);
+            var lockDef = main.Session.Project.ComponentDefinitions.First(c => c.Category == ComponentCategory.ElectricLock);
+            main.CurrentPage = SentinelPage.Components;
+            Pump();
+            main.Components.Selected = lockDef;
+            main.Components.IsBuiltIn = true;
+            Pump();
+            Check(lockDef.IsBuiltIn && lockDef.CarrierComponentId == contactDef.Id &&
+                  lockDef.CarrierParameterLeft == "Lukk vasakul" && lockDef.CarrierParameterRight == "Lukk paremal",
+                "'Part of another component' starts with the door contact and the lock parameters");
+            Check(main.Components.BuiltInSummary.Contains("Lukk paremal") && main.Components.FamilySectionTitle == "Own family (backup)",
+                "the Components page explains the built-in lock: " + main.Components.BuiltInSummary);
+            Gallery.Capture(window, "19_components_lock_built_in");
+            main.CurrentPage = SentinelPage.Doors;
+            Pump();
+            Check(Row(doors, "D107").Status == SetStatus.Modified, "changing how the lock is modelled marks placed doors Modified");
+
+            Select(doors, "D105");
+            doors.PlaceCommand.Execute(null);
+            Pump(30);
+            var i105 = Row(doors, "D105").Instance;
+            var lock105 = i105.Components.First(c => c.Label == "Lock");
+            var contact105 = i105.Components.First(c => c.Label == "Door Contact");
+            Check(lock105.IsBuiltIn && lock105.ElementUniqueId == contact105.ElementUniqueId && Row(doors, "D105").Status == SetStatus.Placed,
+                "the built-in lock has no element of its own; it rides on the contact (" + Row(doors, "D105").StatusText + ")");
+            Check(host.ParameterValue(contact105.ElementUniqueId, "Lukk paremal") == 1 && host.ParameterValue(contact105.ElementUniqueId, "Lukk vasakul") == 0,
+                "latch on the right of the contact (seen from its front) switches on “Lukk paremal”");
+
+            var oldContact = contact105.ElementUniqueId;
+            doors.Inspector.FlipCommand.Execute(null);
+            Pump();
+            doors.UpdateCommand.Execute(null);
+            Pump(30);
+            contact105 = i105.Components.First(c => c.Label == "Door Contact");
+            lock105 = i105.Components.First(c => c.Label == "Lock");
+            Check(lock105.ElementUniqueId == contact105.ElementUniqueId && contact105.ElementUniqueId != oldContact &&
+                  host.ParameterValue(contact105.ElementUniqueId, "Lukk vasakul") == 1 && host.ParameterValue(contact105.ElementUniqueId, "Lukk paremal") == 0,
+                "after a flip the contact moves to the other side and the lock switches to “Lukk vasakul”");
+            Select(doors, "D105");
+            Check(doors.Inspector.Components.First(c => c.Label == "Lock").IsBuiltIn &&
+                  doors.Inspector.Components.First(c => c.Label == "Lock").FamilyText.Contains("“Lukk vasakul”"),
+                "the review panel shows which contact parameter carries the lock");
+            Gallery.Capture(window, "20_doors_lock_built_in");
+
+            // Back to the lock's own family: the contact stays, its lock parameter is switched off.
+            main.CurrentPage = SentinelPage.Components;
+            Pump();
+            main.Components.IsOwnFamily = true;
+            main.CurrentPage = SentinelPage.Doors;
+            Pump();
+            Select(doors, "D105");
+            doors.UpdateCommand.Execute(null);
+            Pump(30);
+            lock105 = i105.Components.First(c => c.Label == "Lock");
+            contact105 = i105.Components.First(c => c.Label == "Door Contact");
+            Check(!lock105.IsBuiltIn && lock105.ElementUniqueId != contact105.ElementUniqueId && lock105.PlacedFamilyName == lockDef.FamilyName &&
+                  !host.DeletedByPlacement.Contains(contact105.ElementUniqueId) && host.ParameterValue(contact105.ElementUniqueId, "Lukk vasakul") == 0,
+                "switching back places the lock family and switches the contact's lock off without deleting the contact");
+            Select(doors, "D104");
+
             // Door source popover (links, scope, Find doors) in both themes
             foreach (var dark in new[] { true, false })
             {

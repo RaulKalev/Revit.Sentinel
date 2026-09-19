@@ -64,13 +64,17 @@ namespace Sentinel.Core.Placement
                     continue;
                 }
 
+                // Switching between "own family" and "built into another component" replaces the component.
                 var typeChanged = existing.ComponentDefinitionId != target.ComponentDefinitionId ||
+                                  existing.IsBuiltIn != target.IsBuiltIn ||
                                   (!string.IsNullOrEmpty(existing.PlacedFamilyName) &&
                                    (existing.PlacedFamilyName != target.FamilyName || existing.PlacedTypeName != target.TypeName));
 
                 var moved = !existing.CalculatedPosition.HasValue ||
                             existing.CalculatedPosition.Value.DistanceTo(target.Position) > moveToleranceMm ||
-                            Angles.Difference(existing.CalculatedRotationDeg, target.InstanceRotationDeg) > rotationToleranceDeg;
+                            Angles.Difference(existing.CalculatedRotationDeg, target.InstanceRotationDeg) > rotationToleranceDeg ||
+                            // Built in: another parameter must be switched on (side swapped, parameters renamed).
+                            (target.IsBuiltIn && existing.PlacedHosting != BuiltInHosting.For(target.CarrierParameter));
 
                 var isManual = existing.State == ComponentState.ManuallyModified || existing.ManualPositionAccepted;
 

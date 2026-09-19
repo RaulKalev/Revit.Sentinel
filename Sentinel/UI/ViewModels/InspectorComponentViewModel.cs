@@ -32,8 +32,11 @@ namespace Sentinel.UI.ViewModels
             RuleId = effective.RuleId;
             Label = effective.DisplayLabel;
             ComponentName = effective.Component != null ? effective.Component.Name + " – " + effective.Component.FamilyDisplay : "(missing component definition)";
-            IsFamilyMissing = effective.Component == null || !effective.Component.IsFamilyConfigured;
+            var builtIn = slots.FirstOrDefault(s => s.IsBuiltIn);
+            IsBuiltIn = builtIn != null;
+            IsFamilyMissing = effective.Component == null || !effective.Component.IsModelled;
             FamilyText = effective.Component == null ? "Component definition missing" :
+                         builtIn != null ? "Built into " + builtIn.CarrierLabel + " · “" + builtIn.CarrierParameter + "” switched on" :
                          effective.Component.IsFamilyConfigured ? effective.Component.Name + " · " + effective.Component.FamilyName + " : " + effective.Component.TypeName :
                          effective.Component.Name + " · no family mapped";
             Summary = UiChoices.RuleSummary(effective.Rule, effective.Component?.DefaultMountingHeightMm);
@@ -60,6 +63,9 @@ namespace Sentinel.UI.ViewModels
         /// <summary>"Card Reader · Family : Type" or "… · no family mapped".</summary>
         public string FamilyText { get; }
         public bool IsFamilyMissing { get; }
+
+        /// <summary>Part of another component's family (switched on by a parameter), no element of its own.</summary>
+        public bool IsBuiltIn { get; }
 
         /// <summary>One-line placement summary for the collapsed row.</summary>
         public string Summary { get; }

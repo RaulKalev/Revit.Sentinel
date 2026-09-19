@@ -158,6 +158,135 @@ namespace Sentinel.UI.ViewModels
             }
         }
 
+        // ---- how the component exists in Revit: its own family, or built into another component's family ----
+
+        public bool IsOwnFamily
+        {
+            get => _selected != null && !_selected.IsBuiltIn;
+            set { if (value) SetModelling(ComponentModelling.OwnFamily); }
+        }
+
+        public bool IsBuiltIn
+        {
+            get => _selected != null && _selected.IsBuiltIn;
+            set { if (value) SetModelling(ComponentModelling.BuiltIntoOtherComponent); }
+        }
+
+        private void SetModelling(ComponentModelling m)
+        {
+            if (_loading || _selected == null || _selected.Modelling == m) return;
+            _selected.Modelling = m;
+            if (m == ComponentModelling.BuiltIntoOtherComponent)
+            {
+                // Sensible starting point: the first door contact carries it; lock parameters as used in the RK families.
+                if (string.IsNullOrEmpty(_selected.CarrierComponentId))
+                    _selected.CarrierComponentId = CarrierChoices.FirstOrDefault(c => c.Category == ComponentCategory.DoorContact)?.Id;
+                if (_selected.Category == ComponentCategory.ElectricLock)
+                {
+                    if (string.IsNullOrWhiteSpace(_selected.CarrierParameterLeft)) _selected.CarrierParameterLeft = "Lukk vasakul";
+                    if (string.IsNullOrWhiteSpace(_selected.CarrierParameterRight)) _selected.CarrierParameterRight = "Lukk paremal";
+                }
+            }
+            OnEdited("component modelling");
+            OnBuiltInChanged();
+        }
+
+        /// <summary>Components that can carry this one (not itself, not other built-in components).</summary>
+        public List<ComponentDefinition> CarrierChoices => _selected == null
+            ? new List<ComponentDefinition>()
+            : Project.ComponentDefinitions.Where(c => c != _selected && !c.IsBuiltIn).OrderBy(c => c.Name).ToList();
+
+        public ComponentDefinition Carrier
+        {
+            get => _selected == null ? null : Project.FindComponent(_selected.CarrierComponentId);
+            set
+            {
+                if (_loading || _selected == null || value == null || _selected.CarrierComponentId == value.Id) return;
+                _selected.CarrierComponentId = value.Id;
+                OnEdited("carrier component");
+                OnBuiltInChanged();
+            }
+        }
+
+        public string CarrierParameterLeft
+        {
+            get => _selected?.CarrierParameterLeft;
+            set
+            {
+                if (_selected == null || _selected.CarrierParameterLeft == value) return;
+                _selected.CarrierParameterLeft = value?.Trim();
+                OnEdited("carrier parameter");
+                OnBuiltInChanged();
+            }
+        }
+
+        public string CarrierParameterRight
+        {
+            get => _selected?.CarrierParameterRight;
+            set
+            {
+                if (_selected == null || _selected.CarrierParameterRight == value) return;
+                _selected.CarrierParameterRight = value?.Trim();
+                OnEdited("carrier parameter");
+                OnBuiltInChanged();
+            }
+        }
+
+        public bool SwapCarrierSides
+        {
+            get => _selected != null && _selected.SwapCarrierSides;
+            set
+            {
+                if (_selected == null || _selected.SwapCarrierSides == value) return;
+                _selected.SwapCarrierSides = value;
+                OnEdited("carrier sides");
+                OnBuiltInChanged();
+            }
+        }
+
+        public bool UseOwnFamilyAsBackup
+        {
+            get => _selected != null && _selected.UseOwnFamilyAsBackup;
+            set
+            {
+                if (_selected == null || _selected.UseOwnFamilyAsBackup == value) return;
+                _selected.UseOwnFamilyAsBackup = value;
+                OnEdited("backup family");
+                OnBuiltInChanged();
+            }
+        }
+
+        public bool BuiltInIsOk => _selected != null && _selected.IsBuiltInConfigured;
+
+        /// <summary>Plain-language description of what Sentinel will do with the built-in setup.</summary>
+        public string BuiltInSummary
+        {
+            get
+            {
+                if (_selected == null || !_selected.IsBuiltIn) return "";
+                var carrier = Carrier;
+                if (carrier == null) return "Choose the component whose family contains the " + _selected.Name + ".";
+                if (!_selected.IsBuiltInConfigured) return "Enter both Yes/No parameters of the " + carrier.Name + " family.";
+                var backup = !_selected.UseOwnFamilyAsBackup ? "Door sets without a " + carrier.Name + " report an error." :
+                    _selected.IsFamilyConfigured ? "Door sets without a " + carrier.Name + " place the own family below instead." :
+                    "Door sets without a " + carrier.Name + " report an error until an own family is mapped below.";
+                return "Sentinel switches “" + _selected.CarrierParameterRight + "” on when the " + _selected.Name +
+                       " is to the right of the " + carrier.Name + " (seen from the front of its family), or “" +
+                       _selected.CarrierParameterLeft + "” when it is to the left. " + backup;
+            }
+        }
+
+        /// <summary>Heading of the family section: the family is only a backup for built-in components.</summary>
+        public string FamilySectionTitle => IsBuiltIn ? "Own family (backup)" : "Revit family type";
+
+        private void OnBuiltInChanged()
+        {
+            OnPropertiesChanged(nameof(IsOwnFamily), nameof(IsBuiltIn), nameof(Carrier), nameof(CarrierChoices), nameof(CarrierParameterLeft),
+                nameof(CarrierParameterRight), nameof(SwapCarrierSides), nameof(UseOwnFamilyAsBackup), nameof(BuiltInIsOk),
+                nameof(BuiltInSummary), nameof(FamilySectionTitle), nameof(MappingText), nameof(MappingIsOk));
+            RefreshList();
+        }
+
         // ---- family mapping ----
 
         public string FamilyFilter
@@ -182,19 +311,23 @@ namespace Sentinel.UI.ViewModels
                 _selected.FamilyName = value.FamilyName;
                 _selected.TypeName = value.TypeName;
                 OnEdited("map family");
-                OnPropertiesChanged(nameof(SelectedFamilyType), nameof(MappingText), nameof(MappingIsOk));
+                OnPropertiesChanged(nameof(SelectedFamilyType), nameof(MappingText), nameof(MappingIsOk), nameof(BuiltInSummary));
                 RefreshList();
             }
         }
 
-        public bool MappingIsOk => _selected != null && _selected.IsFamilyConfigured && (!_familiesLoaded || SelectedFamilyType != null);
+        public bool MappingIsOk => _selected != null && ((_selected.IsFamilyConfigured && (!_familiesLoaded || SelectedFamilyType != null)) ||
+                                                        (_selected.IsBuiltIn && !_selected.IsFamilyConfigured));
 
         public string MappingText
         {
             get
             {
                 if (_selected == null) return "";
-                if (!_selected.IsFamilyConfigured) return "Not configured – placements of this component fail with \"" + _selected.Name + " family not configured\".";
+                if (!_selected.IsFamilyConfigured)
+                    return _selected.IsBuiltIn
+                        ? "No backup family – only used when a door set has no carrier component."
+                        : "Not configured – placements of this component fail with \"" + _selected.Name + " family not configured\".";
                 if (!_familiesLoaded) return _selected.FamilyDisplay;
                 var f = SelectedFamilyType;
                 if (f == null) return _selected.FamilyDisplay + " – not loaded in this project (load the family before placing).";

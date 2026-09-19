@@ -75,6 +75,20 @@ namespace Sentinel.Revit.Placement
 
             var diff = PlacementDiff.Compute(inst, plan, overwriteManual);
             var work = diff.Where(d => d.Action != DiffAction.Unchanged && d.Action != DiffAction.KeepManual).ToList();
+
+            // Built-in components (a lock inside the magnet contact) live on their carrier's element: when that
+            // element is created, replaced or moved they are applied again, and they are handled after the carriers.
+            var carriersInWork = new HashSet<string>(work.Where(d => d.Target != null && d.Action != DiffAction.Remove).Select(d => d.SlotKey));
+            foreach (var d in diff.Where(d => d.Target != null && d.Target.IsBuiltIn &&
+                                              (d.Action == DiffAction.Unchanged || d.Action == DiffAction.KeepManual) &&
+                                              carriersInWork.Contains(d.Target.CarrierSlotKey)))
+            {
+                d.Action = DiffAction.Move;
+                d.Reason = "carrier element changed";
+                work.Add(d);
+            }
+            work = work.OrderBy(d => d.Target != null && d.Target.IsBuiltIn ? 1 : 0).ToList();
+
             var sourceWasChanged = source.Comparison != null && source.Comparison.HasChanges;
 
             if (work.Count == 0)
@@ -106,25 +120,64 @@ namespace Sentinel.Revit.Placement
                 {
                     t.Start();
 
+                    var slotElements = new Dictionary<string, Element>(); // elements created/moved in this run, by slot
                     foreach (var item in work)
                     {
                         var existingElement = item.Existing != null && !string.IsNullOrEmpty(item.Existing.ElementUniqueId)
                             ? doc.GetElement(item.Existing.ElementUniqueId)
                             : null;
+                        // A built-in record points at its carrier: never delete that element, switch the parameter off.
+                        var existingIsBuiltIn = item.Existing != null && item.Existing.IsBuiltIn;
+
+                        if (item.Target != null && item.Target.IsBuiltIn && item.Action != DiffAction.Remove)
+                        {
+                            var builtInItem = item;
+                            var target = item.Target;
+                            if (existingElement != null && !existingIsBuiltIn) doc.Delete(existingElement.Id); // was its own family
+
+                            Element carrierElement;
+                            if (!slotElements.TryGetValue(target.CarrierSlotKey, out carrierElement))
+                            {
+                                var carrierRecord = inst.Components.FirstOrDefault(c => c.SlotKey == target.CarrierSlotKey && !c.IsBuiltIn &&
+                                    !string.IsNullOrEmpty(c.ElementUniqueId) && c.State != ComponentState.Missing && c.State != ComponentState.Failed);
+                                carrierElement = carrierRecord != null ? doc.GetElement(carrierRecord.ElementUniqueId) : null;
+                            }
+                            if (existingIsBuiltIn && existingElement != null && carrierElement != null && existingElement.Id != carrierElement.Id)
+                                SwitchOff(existingElement, BuiltInHosting.ParameterOf(item.Existing.PlacedHosting)); // moved to another carrier
+
+                            var failure = carrierElement == null
+                                ? "the " + target.CarrierLabel + " is not placed, so it could not be switched on."
+                                : SwitchOn(carrierElement, target.CarrierParameter, target.CarrierOtherParameter, target.CarrierLabel);
+                            if (failure != null)
+                            {
+                                componentFailures.Add(item.Label + ": " + failure);
+                                pending.Add(() => RecordFailed(inst, builtInItem, failure));
+                            }
+                            else
+                            {
+                                createdOrMoved++;
+                                var componentId = item.Existing != null ? item.Existing.Id : Ids.New();
+                                var carrier = carrierElement;
+                                toRecord.Add(() => RecordPlaced(ctx, inst, builtInItem, carrier, BuiltInHosting.For(target.CarrierParameter), "Built in", componentId));
+                            }
+                            continue;
+                        }
 
                         switch (item.Action)
                         {
                             case DiffAction.Remove:
-                                if (existingElement != null) doc.Delete(existingElement.Id);
+                                if (existingIsBuiltIn) SwitchOff(existingElement, BuiltInHosting.ParameterOf(item.Existing.PlacedHosting));
+                                else if (existingElement != null) doc.Delete(existingElement.Id);
                                 var toRemove = item.Existing;
                                 pending.Add(() => inst.Components.Remove(toRemove));
                                 break;
 
                             case DiffAction.Move:
                                 var existingIsUnhosted = item.Existing != null && (item.Existing.PlacedHosting ?? "Unhosted") == "Unhosted";
-                                if (existingElement != null && existingIsUnhosted)
+                                if (existingElement != null && existingIsUnhosted && !existingIsBuiltIn)
                                 {
                                     MoveUnhosted(doc, existingElement, item.Target);
+                                    slotElements[item.SlotKey] = existingElement;
                                     createdOrMoved++;
                                     var movedItem = item;
                                     var movedElement = existingElement;
@@ -136,13 +189,15 @@ namespace Sentinel.Revit.Placement
 
                             case DiffAction.Replace:
                             case DiffAction.Create:
-                                if (existingElement != null) doc.Delete(existingElement.Id);
+                                if (existingIsBuiltIn) SwitchOff(existingElement, BuiltInHosting.ParameterOf(item.Existing.PlacedHosting)); // back to its own family
+                                else if (existingElement != null) doc.Delete(existingElement.Id);
                                 try
                                 {
                                     // Id is decided before creation so the element tag and the record agree.
                                     var componentId = item.Existing != null ? item.Existing.Id : Ids.New();
                                     string hosting;
                                     var created = CreateComponent(ctx, inst, def, item.Target, componentId, warnings, out hosting);
+                                    slotElements[item.SlotKey] = created;
                                     createdOrMoved++;
                                     var createdItem = item;
                                     var verb = item.Action == DiffAction.Create ? "Created" : "Recreated";
@@ -266,7 +321,8 @@ namespace Sentinel.Revit.Placement
                 c.PlacedHosting = hosting;
                 c.PlacedUtc = DateTime.UtcNow.ToString("o");
                 c.PlacedBy = user;
-                c.PlacementNote = verb + ": " + target.Explanation + (hosting == "Unhosted" ? "" : " [" + hosting + "]");
+                c.PlacementNote = verb + ": " + target.Explanation +
+                                  (hosting == "Unhosted" || BuiltInHosting.Is(hosting) ? "" : " [" + hosting + "]");
                 c.LastError = null;
             };
         }
@@ -467,6 +523,34 @@ namespace Sentinel.Revit.Placement
                 if (!TrySet(p, pa.Value ?? ""))
                     warnings.Add(target.Label + ": value \"" + pa.Value + "\" could not be written to \"" + pa.Name + "\".");
             }
+        }
+
+        /// <summary>
+        /// Switches a built-in component on: its side's Yes/No parameter on the carrier to Yes, the other side's to No.
+        /// Returns a user-facing reason when that is not possible, otherwise null.
+        /// </summary>
+        private static string SwitchOn(Element carrier, string onName, string offName, string carrierLabel)
+        {
+            var on = carrier.LookupParameter(onName);
+            if (on == null || on.IsReadOnly)
+                return carrierLabel + " family has no writable instance parameter “" + onName +
+                       "”. Add it to the family, or give this component its own family (Components page).";
+            if (on.StorageType != StorageType.Integer || !TrySet(on, "1"))
+                return "“" + onName + "” on the " + carrierLabel + " could not be switched on (it must be a Yes/No parameter).";
+            if (!string.IsNullOrWhiteSpace(offName) && offName != onName)
+            {
+                var off = carrier.LookupParameter(offName);
+                if (off != null && !off.IsReadOnly && off.StorageType == StorageType.Integer) TrySet(off, "0");
+            }
+            return null;
+        }
+
+        /// <summary>Switches a built-in component off on its carrier (the carrier element itself stays).</summary>
+        private static void SwitchOff(Element carrier, string parameterName)
+        {
+            if (carrier == null || string.IsNullOrWhiteSpace(parameterName)) return;
+            var p = carrier.LookupParameter(parameterName);
+            if (p != null && !p.IsReadOnly && p.StorageType == StorageType.Integer) TrySet(p, "0");
         }
 
         private static bool TrySet(Parameter p, string value)

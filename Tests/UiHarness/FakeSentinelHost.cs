@@ -260,16 +260,59 @@ namespace Sentinel.UiHarness
                 var plan = DoorSetPlacementCalculator.Calculate(inst, def, door.Geometry, Project);
                 var diff = PlacementDiff.Compute(inst, plan, request.OverwriteManual);
                 var failures = new List<string>();
-                foreach (var item in diff)
+                // Same order and re-apply rule as the Revit executor: built-in components after their carriers.
+                var carriersInWork = new HashSet<string>(diff.Where(d => d.Target != null && d.Action != DiffAction.Remove &&
+                    d.Action != DiffAction.Unchanged && d.Action != DiffAction.KeepManual).Select(d => d.SlotKey));
+                foreach (var d in diff.Where(d => d.Target != null && d.Target.IsBuiltIn && d.Action == DiffAction.Unchanged &&
+                                                  carriersInWork.Contains(d.Target.CarrierSlotKey)))
+                    d.Action = DiffAction.Move;
+                foreach (var item in diff.OrderBy(d => d.Target != null && d.Target.IsBuiltIn ? 1 : 0))
                 {
+                    if (item.Target != null && item.Target.IsBuiltIn && item.Action != DiffAction.Remove &&
+                        item.Action != DiffAction.Unchanged && item.Action != DiffAction.KeepManual)
+                    {
+                        var carrier = inst.Components.FirstOrDefault(x => x.SlotKey == item.Target.CarrierSlotKey && !x.IsBuiltIn && x.State == ComponentState.Placed);
+                        var b = item.Existing ?? new PlacedComponentInstance();
+                        if (item.Existing == null) inst.Components.Add(b);
+                        b.SlotKey = item.Target.SlotKey;
+                        b.Label = item.Target.Label;
+                        b.ComponentDefinitionId = item.Target.ComponentDefinitionId;
+                        b.CalculatedPosition = item.Target.Position;
+                        b.CalculatedRotationDeg = item.Target.InstanceRotationDeg;
+                        if (carrier == null)
+                        {
+                            b.State = ComponentState.Failed;
+                            b.ElementUniqueId = null;
+                            b.LastError = "the " + item.Target.CarrierLabel + " is not placed.";
+                            failures.Add(item.Label + ": " + b.LastError);
+                            continue;
+                        }
+                        SetParameter(carrier.ElementUniqueId, item.Target.CarrierParameter, 1);
+                        SetParameter(carrier.ElementUniqueId, item.Target.CarrierOtherParameter, 0);
+                        b.ElementUniqueId = carrier.ElementUniqueId;
+                        b.ElementId = carrier.ElementId;
+                        b.State = ComponentState.Placed;
+                        b.PlacedPosition = carrier.PlacedPosition;
+                        b.PlacedFamilyName = null;
+                        b.PlacedTypeName = null;
+                        b.PlacedHosting = BuiltInHosting.For(item.Target.CarrierParameter);
+                        b.PlacementNote = "Built in: " + item.Target.Explanation;
+                        b.LastError = null;
+                        continue;
+                    }
+                    var wasBuiltIn = item.Existing != null && item.Existing.IsBuiltIn;
                     switch (item.Action)
                     {
                         case DiffAction.Remove:
+                            if (wasBuiltIn) SetParameter(item.Existing.ElementUniqueId, BuiltInHosting.ParameterOf(item.Existing.PlacedHosting), 0);
+                            else DeletedByPlacement.Add(item.Existing.ElementUniqueId);
                             inst.Components.Remove(item.Existing);
                             break;
                         case DiffAction.Create:
                         case DiffAction.Move:
                         case DiffAction.Replace:
+                            if (wasBuiltIn) SetParameter(item.Existing.ElementUniqueId, BuiltInHosting.ParameterOf(item.Existing.PlacedHosting), 0);
+                            else if (item.Existing?.ElementUniqueId != null) DeletedByPlacement.Add(item.Existing.ElementUniqueId);
                             var c = item.Existing ?? new PlacedComponentInstance();
                             if (item.Existing == null) inst.Components.Add(c);
                             c.SlotKey = item.Target.SlotKey;
@@ -313,6 +356,27 @@ namespace Sentinel.UiHarness
             SaveCount++;
             Log.Add("PLACE " + request.Mode + ": " + batch.Summary);
             Post(() => done(batch));
+        }
+
+        /// <summary>Yes/No parameter values written to fake elements (element uid → parameter → 0/1).</summary>
+        public Dictionary<string, Dictionary<string, int>> ElementParameters { get; } = new Dictionary<string, Dictionary<string, int>>();
+
+        /// <summary>Elements a placement run deleted (a built-in component must never delete its carrier).</summary>
+        public HashSet<string> DeletedByPlacement { get; } = new HashSet<string>();
+
+        public int ParameterValue(string elementUid, string name)
+        {
+            Dictionary<string, int> map;
+            int v;
+            return elementUid != null && ElementParameters.TryGetValue(elementUid, out map) && map.TryGetValue(name, out v) ? v : -1;
+        }
+
+        private void SetParameter(string elementUid, string name, int value)
+        {
+            if (elementUid == null || string.IsNullOrWhiteSpace(name)) return;
+            Dictionary<string, int> map;
+            if (!ElementParameters.TryGetValue(elementUid, out map)) ElementParameters[elementUid] = map = new Dictionary<string, int>();
+            map[name] = value;
         }
 
         public void DeletePlacedComponents(IList<string> instanceIds, bool removeRecords, Action<OperationResult> done)
