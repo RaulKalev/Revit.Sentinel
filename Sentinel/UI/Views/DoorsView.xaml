@@ -17,12 +17,6 @@
                 <Setter Property="Fill" Value="{DynamicResource Separator}" />
                 <Setter Property="VerticalAlignment" Value="Center" />
             </Style>
-            <Style x:Key="ButtonIconLabel" TargetType="{x:Type materialDesign:PackIcon}">
-                <Setter Property="Width" Value="15" />
-                <Setter Property="Height" Value="15" />
-                <Setter Property="Margin" Value="0,0,6,0" />
-                <Setter Property="VerticalAlignment" Value="Center" />
-            </Style>
         </ResourceDictionary>
     </UserControl.Resources>
 
@@ -166,6 +160,16 @@
                                 <Run Text="Attention" /><Run Foreground="{DynamicResource Text.Tertiary}" Text="{Binding CountAttention, StringFormat={}  {0}, Mode=OneWay}" />
                             </TextBlock>
                         </StackPanel>
+                    </RadioButton>
+                    <RadioButton
+                        Command="{Binding FilterCommand}"
+                        CommandParameter="NoAccessControl"
+                        GroupName="DoorFilter"
+                        Style="{StaticResource Segment}"
+                        ToolTip="Doors decided to need no access control">
+                        <TextBlock>
+                            <Run Text="No access control" /><Run Foreground="{DynamicResource Text.Tertiary}" Text="{Binding CountNoAccessControl, StringFormat={}  {0}, Mode=OneWay}" />
+                        </TextBlock>
                     </RadioButton>
                     <RadioButton
                         Command="{Binding FilterCommand}"
@@ -459,6 +463,11 @@
                                     <materialDesign:PackIcon Kind="LinkVariantRemove" />
                                 </MenuItem.Icon>
                             </MenuItem>
+                            <MenuItem Command="{Binding NoAccessControlCommand}" Header="Mark as no access control">
+                                <MenuItem.Icon>
+                                    <materialDesign:PackIcon Kind="ShieldOffOutline" />
+                                </MenuItem.Icon>
+                            </MenuItem>
                             <MenuItem Command="{Binding IgnoreCommand}" Header="Ignore doors">
                                 <MenuItem.Icon>
                                     <materialDesign:PackIcon Kind="EyeOffOutline" />
@@ -466,11 +475,12 @@
                             </MenuItem>
                             <MenuItem Command="{Binding UnignoreCommand}" Header="Stop ignoring" />
                             <Separator Style="{StaticResource MenuSeparator}" />
-                            <MenuItem Command="{Binding ZoomCommand}" Header="Zoom to door">
+                            <MenuItem Command="{Binding ZoomCommand}" Header="{Binding ZoomText}">
                                 <MenuItem.Icon>
                                     <materialDesign:PackIcon Kind="MagnifyScan" />
                                 </MenuItem.Icon>
                             </MenuItem>
+                            <MenuItem Command="{Binding ZoomAlternativeCommand}" Header="{Binding ZoomAlternativeText}" />
                             <MenuItem Command="{Binding SelectComponentsCommand}" Header="Select components in Revit" />
                             <MenuItem Command="{Binding SelectSourceDoorCommand}" Header="Select source door in Revit" />
                         </ContextMenu>

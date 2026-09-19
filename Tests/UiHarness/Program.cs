@@ -10,6 +10,7 @@ using System.Windows.Threading;
 using Sentinel.Core.Geometry;
 using Sentinel.Core.Models;
 using Sentinel.Core.Persistence;
+using Sentinel.Core.Placement;
 using Sentinel.Core.Rules;
 using Sentinel.UI;
 using Sentinel.UI.ViewModels;
@@ -166,9 +167,17 @@ namespace Sentinel.UiHarness
 
             // ---------------------------------------------------------------- preview workflow
             Select(doors, "D104", "D120", "D122");
+            host.LinedDoors.Add("D104"); // a 45 mm lining of another model on side A
             doors.PreviewCommand.Execute(null);
             Pump();
             Check(doors.Preview.IsActive && Row(doors, "D104").Status == SetStatus.Preview, "preview started, row shows Preview");
+            Check(host.Log.Any(l => l.StartsWith("WALLCHECK ") && l != "WALLCHECK 0"), "the review checks the walls first");
+            var sideA = host.LastScene.Doors[0].Placements.Where(p => p.Side == ResolvedSide.SideA && !p.IsBuiltIn).ToList();
+            Check(sideA.Count > 0 && sideA.All(p => Math.Abs(p.WallClearanceMm - 45) < 0.5),
+                "side A components are moved out of the other model's lining (" + string.Join(", ", sideA.Select(p => p.Label + " " + p.WallClearanceMm)) + ")");
+            Check(host.LastScene.Doors[0].Placements.Where(p => p.Side == ResolvedSide.SideB).All(p => p.WallClearanceMm == 0), "side B is untouched");
+            Check(doors.Preview.SkipText == "Skip", "the skip button never says (last)");
+            Gallery.Capture(window, "22_review_layout");
             var readerBefore = host.LastScene.Doors[0].Placements.First(p => p.Label == "Reader");
             PlanRenderer.Render(host.LastScene, "D104 DS-02 (+Intercom) – before flip", Path.Combine(_out, "02_plan_D104_before_flip.png"));
             Snap(window, "02_preview_D104.png");
@@ -178,6 +187,10 @@ namespace Sentinel.UiHarness
             Pump();
             var readerAfter = host.LastScene.Doors[0].Placements.First(p => p.Label == "Reader");
             Check(readerBefore.Side != readerAfter.Side, "Flip Set moves the reader to the other side in the preview (" + readerBefore.Side + " → " + readerAfter.Side + ")");
+            Check(host.LastScene.Doors[0].Placements.Where(p => p.Side == ResolvedSide.SideA && !p.IsBuiltIn).All(p => Math.Abs(p.WallClearanceMm - 45) < 0.5) &&
+                  host.LastScene.Doors[0].Placements.Where(p => p.Side == ResolvedSide.SideB).All(p => p.WallClearanceMm == 0),
+                "after a flip the walls are checked again: only side A components move out");
+            host.LinedDoors.Clear();
             PlanRenderer.Render(host.LastScene, "D104 DS-02 – after Flip Set", Path.Combine(_out, "03_plan_D104_after_flip.png"));
 
             doors.Preview.NextCommand.Execute(null);
@@ -317,7 +330,22 @@ namespace Sentinel.UiHarness
             Pump(30);
             Check(doors.Rows.Count(r => r.Door != null) == host.Doors.Count + 4, "doors of both links are listed (" + main.StatusMessage + ")");
             Check(main.StatusMessage.Contains("ARH_Model.ifc: ") && main.StatusMessage.Contains("SIS_Model.ifc: 4"), "status reports doors per link");
-            Check(Row(doors, "SKU13").Reason.StartsWith("Probably the same door as D103"), "a door modelled in both links is flagged: " + Row(doors, "SKU13").Reason);
+            // Same opening in both links: the door of the first model is listed, the other one is left out as Ignored.
+            Check(Row(doors, "SKU13").Status == SetStatus.Ignored && Row(doors, "SKU13").IsLeftOutDuplicate &&
+                  Row(doors, "SKU13").Reason.StartsWith("Same door as D103 in ARH_Model.ifc"),
+                "a door modelled in both links is left out in favour of the first model: " + Row(doors, "SKU13").Reason);
+            Check(!doors.RowsView.Cast<DoorRowViewModel>().Any(r => r.Mark == "SKU13"), "the left-out duplicate is not in the All list");
+            Check(Row(doors, "D103").Reason == "" || !Row(doors, "D103").Reason.StartsWith("Probably"), "the listed door needs no duplicate hint");
+            Check(main.StatusMessage.Contains("higher-priority model"), "discovery says duplicates were left out: " + main.StatusMessage);
+            // Interior model first: SKU13 is listed; D103 stays too because it already has a placed set, with a hint.
+            main.Session.Project.Settings.LinkPriority = new List<string> { "SIS_Model.ifc", "ARH_Model.ifc" };
+            doors.UpdateRows();
+            Pump();
+            Check(Row(doors, "SKU13").Status == SetStatus.Unassigned, "changing the model priority lists the other door");
+            Check(Row(doors, "D103").Reason.StartsWith("Probably the same door as SKU13"), "a door with a set keeps its hint when both are listed: " + Row(doors, "D103").Reason);
+            main.Session.Project.Settings.LinkPriority = new List<string>();
+            doors.UpdateRows();
+            Pump();
             Check(Row(doors, "SKU20").Reason == "", "interior-only doors are not flagged");
             Check(main.Session.Project.Settings.GetDiscoveryLinks().SequenceEqual(new[] { FakeSentinelHost.LinkUid, FakeSentinelHost.InteriorLinkUid }),
                 "both source links are saved with the project");
@@ -326,12 +354,44 @@ namespace Sentinel.UiHarness
             Pump(30);
             Check(doors.Rows.All(r => r.Mark != "SW1") && main.StatusMessage.Contains("1 window type(s)"), "window types in the Doors category can be left out");
             Check(main.Session.Project.Settings.DiscoverySkipWindowTypes, "the window option is saved with the project");
+            doors.ActiveFilter = "Ignored";
+            Pump();
             Select(doors, "SKU13");
             Check(doors.Inspector.Subtitle.Contains("SIS_Model.ifc") && !doors.Inspector.Subtitle.Contains(" : 2"),
                 "the review panel names the door's link: " + doors.Inspector.Subtitle);
-            Check(doors.Inspector.Issues.Any(i => i.Message.StartsWith("Probably the same door as D103 in ARH_Model.ifc")),
-                "the review panel explains the possible duplicate");
-            Gallery.Capture(window, "18_doors_two_links");
+            Check(doors.Inspector.Issues.Any(i => i.Message.StartsWith("Same door as D103 in ARH_Model.ifc")),
+                "the review panel explains why the duplicate is left out");
+            Gallery.Capture(window, "18_doors_duplicate_left_out");
+            // Keep both after all: Stop ignoring gives it an (empty) record of its own.
+            doors.UnignoreCommand.Execute(null);
+            Pump();
+            Check(Row(doors, "SKU13").Status == SetStatus.Unassigned && !Row(doors, "SKU13").IsLeftOutDuplicate, "a left-out duplicate can be listed again");
+            doors.ActiveFilter = "All";
+            Pump();
+            Select(doors, "SKU13");
+            doors.UnassignCommand.Execute(null); // back to the default
+            Pump();
+            Check(Row(doors, "SKU13").IsLeftOutDuplicate, "removing that record leaves it out again");
+
+            // Model priority in Settings
+            main.CurrentPage = SentinelPage.Settings;
+            Pump();
+            var names = main.Settings.LinkPriority.Select(l => l.Name).ToList();
+            Check(names.IndexOf("ARH_Model.ifc") >= 0 && names.IndexOf("ARH_Model.ifc") < names.IndexOf("SIS_Model.ifc"),
+                "settings list the linked models by priority: " + string.Join(", ", names));
+            var arh = main.Settings.LinkPriority.First(l => l.Name == "ARH_Model.ifc");
+            while (main.Settings.LinkPriority.First(l => l.Name == "ARH_Model.ifc").Rank <
+                   main.Settings.LinkPriority.First(l => l.Name == "SIS_Model.ifc").Rank)
+                main.Settings.MoveLinkDownCommand.Execute(main.Settings.LinkPriority.First(l => l.Name == "ARH_Model.ifc"));
+            Pump();
+            Gallery.Capture(window, "24_settings_model_priority");
+            main.CurrentPage = SentinelPage.Doors;
+            Pump();
+            Check(!Row(doors, "SKU13").IsLeftOutDuplicate && Row(doors, "SKU13").Status == SetStatus.Unassigned,
+                "moving the interior model up lists its door on the Doors page");
+            main.Session.Project.Settings.LinkPriority = new List<string>();
+            doors.UpdateRows();
+            Pump();
             Select(doors, "D104");
 
             // ---------------------------------------------------------------- lock built into the magnet contact
@@ -395,6 +455,57 @@ namespace Sentinel.UiHarness
                 "switching back places the lock family and switches the contact's lock off without deleting the contact");
             Select(doors, "D104");
 
+            // ---------------------------------------------------------------- zoom view: floor plan or 3D
+            Check(main.Settings.ZoomIn3D && doors.ZoomAlternativeText == "Zoom in floor plan", "3D is the default zoom; the floor plan is the extra command");
+            main.CurrentPage = SentinelPage.Settings;
+            Pump();
+            main.Settings.ZoomInFloorPlan = true;
+            Pump();
+            Gallery.Capture(window, "21_settings_zoom_view");
+            main.CurrentPage = SentinelPage.Doors;
+            Pump();
+            Select(doors, "D102");
+            Check(doors.Inspector.ZoomText == "Zoom to door in floor plan" && doors.Inspector.ZoomAlternativeText == "Zoom in 3D view" &&
+                  doors.Inspector.IsAlternativeZoom3D, "with floor plans as the default, the review panel offers 3D as well");
+            host.Log.Clear();
+            doors.Inspector.ZoomCommand.Execute(null);
+            doors.Inspector.ZoomAlternativeCommand.Execute(null);
+            Pump();
+            Check(host.Log.Contains("NAVIGATE ZoomToDoor D102 default") && host.Log.Contains("NAVIGATE ZoomToDoor D102 View3D"),
+                "zoom uses the default view; the extra command asks for 3D (" + string.Join(" | ", host.Log) + ")");
+            Check(main.Session.Project.Settings.ZoomView == DoorZoomView.FloorPlan, "the zoom view is saved with the project settings");
+            main.Settings.ZoomIn3D = true;
+            doors.OnActivated();
+
+            // ---------------------------------------------------------------- no access control
+            Select(doors, "SKU20", "SKU21");
+            doors.AssignDefinition = doors.Definitions.Last();
+            Check(NoAccessControlChoice.Is(doors.AssignDefinition), "'No access control' is offered last in the set picker");
+            doors.AssignCommand.Execute(null);
+            Pump();
+            Check(Row(doors, "SKU20").Status == SetStatus.NoAccessControl && Row(doors, "SKU20").SetCode == "None" &&
+                  Row(doors, "SKU20").StatusText == "No access control", "doors can be marked as no access control");
+            Check(doors.CountNoAccessControl == 2 && doors.PrimaryAction != "Assign", "marked doors count as decided");
+            doors.ActiveFilter = "NoAccessControl";
+            Pump();
+            Check(doors.RowsView.Cast<DoorRowViewModel>().Select(r => r.Mark).OrderBy(m => m).SequenceEqual(new[] { "SKU20", "SKU21" }),
+                "the No access control filter lists them");
+            Select(doors, "SKU20");
+            Check(doors.Inspector.IsNoAccessControl && !doors.Inspector.HasInstance && NoAccessControlChoice.Is(doors.Inspector.SelectedSet.Definition),
+                "the review panel shows the decision");
+            Gallery.Capture(window, "23_no_access_control");
+            Check(!doors.PreviewCommand.CanExecute(null) && !doors.PlaceCommand.CanExecute(null), "nothing can be placed for such a door");
+            doors.Inspector.SelectedSet = doors.Inspector.SetChoices.First(c => c.Definition?.Code == "DS-01");
+            Pump();
+            Check(Row(doors, "SKU20").Status == SetStatus.Ready && !Row(doors, "SKU20").Instance.NoAccessControl, "choosing a set replaces the mark");
+            doors.ActiveFilter = "All";
+            Pump();
+            Select(doors, "SKU20", "SKU21");
+            doors.UnassignCommand.Execute(null);
+            Pump();
+            Check(Row(doors, "SKU21").Status == SetStatus.Unassigned, "Remove door set clears the mark");
+            doors.AssignDefinition = doors.Definitions.First();
+
             // Door source popover (links, scope, Find doors) in both themes
             foreach (var dark in new[] { true, false })
             {
@@ -450,6 +561,52 @@ namespace Sentinel.UiHarness
             ThemeManager.ForceHighContrast = null;
             window.Theme.ApplyTheme();
             Pump();
+
+            // ---------------------------------------------------------------- reader moved in the model → use that position
+            main.CurrentPage = SentinelPage.Doors;
+            doors.ActiveFilter = "All";
+            Pump();
+            var d120 = Row(doors, "D120").Instance;
+            var ds02 = main.Session.Project.FindDoorSet(d120.DefinitionId);
+            var widthAxis = host.Door("D120").Geometry.WidthAxis.Flatten().Normalize();
+            Func<Vec3, PlacedComponentInstance> moveReader = delta =>
+            {
+                var rec = d120.Components.First(c => c.Label == "Reader" && !c.SlotKey.EndsWith("#B"));
+                rec.State = ComponentState.ManuallyModified;
+                rec.ActualPosition = rec.PlacedPosition.Value + delta;
+                rec.ActualRotationDeg = rec.PlacedRotationDeg;
+                doors.UpdateRows();
+                Select(doors, "D120");
+                return rec;
+            };
+            var movedRec = moveReader(widthAxis * 100 + Vec3.UnitZ * 50);
+            var movedRow = doors.Inspector.Components.First(c => c.Label == "Reader");
+            Check(movedRow.IsMovedInModel && movedRow.UseForDoorCommand.CanExecute(null) && movedRow.UseForSetCommand.CanExecute(null) &&
+                  movedRow.UseForSetText == "Use for all DS-02 doors…", "a reader moved in the model offers to use that position");
+            Gallery.Capture(window, "25_reader_moved_in_model");
+            movedRow.UseForDoorCommand.Execute(null);
+            Pump();
+            Check(movedRec.State == ComponentState.Placed && Row(doors, "D120").Status == SetStatus.Placed &&
+                  d120.Overrides.Find(movedRec.SlotKey) != null,
+                "'For this door' stores the moved position as this door's placement (" + Row(doors, "D120").Status + ", " + main.StatusMessage + ")");
+            var planPos = main.Session.Plan(d120).Placements.First(p => p.SlotKey == movedRec.SlotKey).Position;
+            Check(planPos.DistanceTo(movedRec.ActualPosition.Value) < 1, "the calculated position is now where the reader is");
+
+            var ds02Before = ds02.Components.First(c => c.Id == movedRec.SlotKey).Rule.Clone();
+            var otherPlaced = main.Session.Project.DoorSetInstances.Where(i => i != d120 && i.DefinitionId == ds02.Id && i.HasPlacedElements)
+                .Select(i => i.Source.Mark).ToList();
+            movedRec = moveReader(widthAxis * -40 + Vec3.UnitZ * -150);
+            movedRow = doors.Inspector.Components.First(c => c.Label == "Reader");
+            movedRow.UseForSetCommand.Execute(null);
+            Pump();
+            var ds02After = ds02.Components.First(c => c.Id == movedRec.SlotKey).Rule;
+            Check(dialogs.Transcript.Last().Contains("Use position for DS-02") && dialogs.Transcript.Last().Contains("will show Modified"),
+                "using it for the set type asks first and says what happens to other placed doors");
+            Check(Math.Abs(ds02After.MountingHeightMm.GetValueOrDefault() - ds02Before.MountingHeightMm.GetValueOrDefault(1000)) > 1 &&
+                  d120.Overrides.Find(movedRec.SlotKey) == null && movedRec.State == ComponentState.Placed && Row(doors, "D120").Status == SetStatus.Placed,
+                "'Use for all DS-02 doors' changes the set type; this door follows it and stays Placed");
+            Check(otherPlaced.Count > 0 && otherPlaced.All(m => Row(doors, m).Status == SetStatus.Modified),
+                "other placed DS-02 doors show Modified until Update placement (" + string.Join(", ", otherPlaced.Select(m => m + " " + Row(doors, m).Status)) + ")");
 
             // ---------------------------------------------------------------- persistence round trip of the UI-built project
             var project = main.Session.Project;

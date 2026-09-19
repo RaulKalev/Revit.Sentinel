@@ -193,7 +193,6 @@ namespace Sentinel.UiHarness
             r.PossibleDuplicates = CrossLinkDuplicates.Mark(r.Doors);
             foreach (var d in r.Doors.Where(x => x.PossibleDuplicateOf != null)) d.ReadWarnings.Add("Probably the same door as " + d.PossibleDuplicateOf + ".");
             if (r.SkippedWindowTypes > 0) r.Warnings.Add(r.SkippedWindowTypes + " window type(s) in the Doors category were left out.");
-            if (r.PossibleDuplicates > 0) r.Warnings.Add(r.PossibleDuplicates + " door(s) appear in more than one link.");
             var estimated = r.Doors.Count(d => d.Geometry.Source == DoorGeometrySource.EstimatedFromGeometry);
             if (estimated > 0) r.Warnings.Add(estimated + " door(s) use estimated IFC geometry (hinge side unknown).");
             Log.Add("DISCOVER " + request.Scope + " [" + string.Join(",", request.LinkUniqueIds) + "] → " + r.Doors.Count);
@@ -225,6 +224,30 @@ namespace Sentinel.UiHarness
             }
             Log.Add("REFRESH missing=" + r.MissingComponents);
             Post(() => done(r));
+        }
+
+        /// <summary>Doors with a 45 mm lining (another model) on side A, overlapping the door's wall face by 5 mm.</summary>
+        public HashSet<string> LinedDoors { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        public void CheckWallClearances(IList<string> instanceIds, Action<OperationResult> done)
+        {
+            var moved = 0;
+            foreach (var inst in instanceIds.Select(Project.FindInstance).Where(i => i != null))
+            {
+                var def = Project.FindDoorSet(inst.DefinitionId);
+                var door = AllDoors.FirstOrDefault(d => d.Key == inst.Source?.Key);
+                if (def == null || door == null) continue;
+                var plan = DoorSetPlacementCalculator.Calculate(inst, def, door.Geometry, Project, false);
+                var measured = new Dictionary<string, double>();
+                foreach (var p in plan.Placements.Where(x => !x.IsBuiltIn && x.Side == ResolvedSide.SideA && LinedDoors.Contains(door.Current.Mark)))
+                {
+                    var exit = WallClearance.ExitDistance(new[] { new MaterialSpan(-5, 45), new MaterialSpan(-200, 0) });
+                    if (exit >= 1) measured[WallClearance.Key(p.SlotKey, p.Side.ToString())] = exit;
+                }
+                if (WallClearance.Store(inst, measured)) moved += measured.Count;
+            }
+            Log.Add("WALLCHECK " + moved);
+            Post(() => done(OperationResult.Ok(moved > 0 ? moved + " component(s) moved out of a wall." : null)));
         }
 
         public void ShowPreview(PreviewScene scene, bool zoom, Action<OperationResult> done)
@@ -394,7 +417,7 @@ namespace Sentinel.UiHarness
 
         public void Navigate(NavigationRequest request, Action<OperationResult> done)
         {
-            Log.Add("NAVIGATE " + request.Kind + " " + request.Source?.Mark);
+            Log.Add("NAVIGATE " + request.Kind + " " + request.Source?.Mark + " " + (request.View?.ToString() ?? "default"));
             Post(() => done(OperationResult.Ok()));
         }
 

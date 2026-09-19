@@ -2,7 +2,6 @@
 <Weavers xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="FodyWeavers.xsd">
 	<Costura CreateTemporaryAssemblies='true'>
 		<IncludeAssemblies>
-			Sentinel.Core
 			MaterialDesignThemes.Wpf
 			MaterialDesignColors
 			Newtonsoft.Json
@@ -11,7 +10,6 @@
 		</IncludeAssemblies>
 		<PreloadOrder>
 			Newtonsoft.Json
-			Sentinel.Core
 			ricaun.Revit.UI.0.8.0
 			Microsoft.Xaml.Behaviors
 		</PreloadOrder>

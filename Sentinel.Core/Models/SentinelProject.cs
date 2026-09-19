@@ -31,6 +31,10 @@ namespace Sentinel.Core.Models
         public DoorSetDefinition FindDoorSet(string id) =>
             string.IsNullOrEmpty(id) ? null : DoorSetDefinitions.FirstOrDefault(d => d.Id == id);
 
+        /// <summary>A set type or the "No access control" choice (assignment rule targets).</summary>
+        public DoorSetDefinition FindSetChoice(string id) =>
+            NoAccessControlChoice.Is(id) ? NoAccessControlChoice.Definition : FindDoorSet(id);
+
         public DoorSetInstance FindInstance(string id) =>
             string.IsNullOrEmpty(id) ? null : DoorSetInstances.FirstOrDefault(i => i.Id == id);
 

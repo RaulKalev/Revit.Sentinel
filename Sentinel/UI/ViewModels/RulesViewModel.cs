@@ -66,7 +66,7 @@ namespace Sentinel.UI.ViewModels
         public RulesViewModel(MainViewModel main)
         {
             _main = main;
-            NewCommand = new RelayCommand(New, () => IsEditable && Project.DoorSetDefinitions.Count > 0);
+            NewCommand = new RelayCommand(New, () => IsEditable);
             DeleteCommand = new RelayCommand(Delete, () => IsEditable && _selected != null);
             AddConditionCommand = new RelayCommand(AddCondition, () => IsEditable && _selected != null);
             TestCommand = new RelayCommand(Test, () => _selected != null && _main.Doors.SelectedRow != null);
@@ -78,7 +78,8 @@ namespace Sentinel.UI.ViewModels
         public ObservableCollection<AssignmentRule> Rules { get; } = new ObservableCollection<AssignmentRule>();
         public ObservableCollection<ConditionRowViewModel> Conditions { get; } = new ObservableCollection<ConditionRowViewModel>();
         public List<Option<RuleMatchMode>> MatchModes => UiChoices.MatchModes;
-        public IEnumerable<DoorSetDefinition> Definitions => Project.DoorSetDefinitions.OrderBy(d => d.Code, StringComparer.OrdinalIgnoreCase).ToList();
+        public IEnumerable<DoorSetDefinition> Definitions =>
+            Project.DoorSetDefinitions.OrderBy(d => d.Code, StringComparer.OrdinalIgnoreCase).Concat(new[] { NoAccessControlChoice.Definition }).ToList();
 
         public IEnumerable<string> FieldChoices =>
             DoorFacts.BuiltInFields.Concat(Project.Settings.CapturedParameterNames ?? new List<string>())
@@ -128,7 +129,7 @@ namespace Sentinel.UI.ViewModels
 
         public DoorSetDefinition TargetSet
         {
-            get => _selected == null ? null : Project.FindDoorSet(_selected.DefinitionId);
+            get => _selected == null ? null : Project.FindSetChoice(_selected.DefinitionId);
             set { if (_selected != null && value != null && _selected.DefinitionId != value.Id) { _selected.DefinitionId = value.Id; OnEdited(); OnPropertyChanged(); RefreshList(); } }
         }
 
@@ -153,9 +154,9 @@ namespace Sentinel.UI.ViewModels
 
         public static string Describe(AssignmentRule r, SentinelProject p)
         {
-            var target = p.FindDoorSet(r.DefinitionId);
+            var target = p.FindSetChoice(r.DefinitionId);
             return r.Priority + " • " + (string.IsNullOrWhiteSpace(r.Name) ? "(unnamed)" : r.Name) + " → " +
-                   (target?.Code ?? "(no set)") + (r.Enabled ? "" : " • disabled");
+                   (NoAccessControlChoice.Is(target) ? NoAccessControlChoice.Name : target?.Code ?? "(no set)") + (r.Enabled ? "" : " • disabled");
         }
 
         private void RefreshList()
@@ -191,7 +192,7 @@ namespace Sentinel.UI.ViewModels
             {
                 Name = "New rule",
                 Priority = (Project.AssignmentRules.Count == 0 ? 10 : Project.AssignmentRules.Max(x => x.Priority) + 10),
-                DefinitionId = Project.DoorSetDefinitions.First().Id,
+                DefinitionId = Project.DoorSetDefinitions.FirstOrDefault()?.Id ?? NoAccessControlChoice.Id,
                 Conditions = { new RuleCondition { Field = DoorFacts.SideBRoom, Operator = RuleOperator.Contains, Value = "" } }
             };
             Project.AssignmentRules.Add(r);
@@ -238,7 +239,7 @@ namespace Sentinel.UI.ViewModels
             var match = AssignmentRuleEvaluator.Matches(_selected, facts, out explanation);
             var winner = AssignmentRuleEvaluator.Suggest(Project.AssignmentRules, facts);
             TestResult = row.Mark + ": this rule " + (match ? "MATCHES (" + explanation + ")" : "does not match") + ".\n" +
-                         "Overall suggestion: " + (winner == null ? "none" : Project.FindDoorSet(winner.DefinitionId)?.DisplayName + " – " + winner.Explanation);
+                         "Overall suggestion: " + (winner == null ? "none" : Project.FindSetChoice(winner.DefinitionId)?.DisplayName + " – " + winner.Explanation);
         }
     }
 }

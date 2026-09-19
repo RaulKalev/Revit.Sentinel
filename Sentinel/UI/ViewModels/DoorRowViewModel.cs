@@ -50,6 +50,16 @@ namespace Sentinel.UI.ViewModels
         public bool IsAssigned => Instance != null && !string.IsNullOrEmpty(Instance.DefinitionId) && !Instance.IsIgnored;
         public bool HasPlacedElements => Instance != null && Instance.HasPlacedElements;
 
+        /// <summary>A cross-link duplicate left out in favour of the same door in a higher-priority model.</summary>
+        public bool IsLeftOutDuplicate { get; private set; }
+
+        /// <summary>
+        /// Both doors of a cross-link duplicate are listed (neither was left out, e.g. both have a set): worth a hint.
+        /// </summary>
+        public bool ShowsDuplicateHint =>
+            !IsLeftOutDuplicate && !string.IsNullOrEmpty(Door?.PossibleDuplicateOf) &&
+            !(Door.DuplicatePartner?.PreferredDuplicate == Door && _session.Project.FindInstanceBySourceKey(Door.DuplicatePartner.Key) == null);
+
         public void Update()
         {
             var src = Source;
@@ -59,19 +69,29 @@ namespace Sentinel.UI.ViewModels
             Rooms = SentinelSession.SideName(src, true) + " | " + SentinelSession.SideName(src, false);
 
             var def = Instance != null ? _session.Project.FindDoorSet(Instance.DefinitionId) : null;
-            SetCode = Instance == null || string.IsNullOrEmpty(Instance.DefinitionId) ? "—" : def?.Code ?? "(deleted)";
-            SetName = def?.Name ?? "";
+            var none = Instance != null && Instance.IsNoAccessControl;
+            SetCode = none ? "None" : Instance == null || string.IsNullOrEmpty(Instance.DefinitionId) ? "—" : def?.Code ?? "(deleted)";
+            SetName = none ? NoAccessControlChoice.Name : def?.Name ?? "";
             AccessText = Instance != null && !string.IsNullOrEmpty(Instance.DefinitionId)
                 ? SentinelSession.AccessText(src, Instance.AccessDirection)
                 : "";
 
             Evaluation = _session.Evaluate(Instance);
+            // Same door in a model with a higher priority (Settings → Doors in several models): that one is listed instead.
+            IsLeftOutDuplicate = Instance == null && Door?.PreferredDuplicate?.Current != null;
+            if (IsLeftOutDuplicate)
+            {
+                var other = Door.PreferredDuplicate.Current;
+                Evaluation = new SetStatusResult { Status = SetStatus.Ignored };
+                Evaluation.Issues.Add(new StatusIssue(IssueSeverity.Info, IssueCodes.DuplicateLeftOut,
+                    "Same door as " + other.DisplayName + " in " + LinkInfo.Short(other.LinkName) + ", which is used instead (model priority in Settings)."));
+            }
             Status = Evaluation.Status;
             StatusText = DoorSetStatusEvaluator.StatusText(Status);
             StatusBrushKey = BrushKey(Status);
             Reason = Evaluation.PrimaryReason;
             // Same opening in another source link (architecture split across models): say so while the door is free.
-            if (string.IsNullOrEmpty(Reason) && !string.IsNullOrEmpty(Door?.PossibleDuplicateOf))
+            if (string.IsNullOrEmpty(Reason) && ShowsDuplicateHint)
                 Reason = "Probably the same door as " + Door.PossibleDuplicateOf;
 
             if (Instance == null || string.IsNullOrEmpty(Instance.DefinitionId))

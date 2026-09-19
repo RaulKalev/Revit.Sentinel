@@ -20,6 +20,9 @@ namespace Sentinel.Core.Placement
 
         /// <summary>Library lookup (names of carrier components in messages). Optional.</summary>
         public Func<string, ComponentDefinition> FindComponent { get; set; }
+
+        /// <summary>Measured push-out from the wall face per slot (mm, see <see cref="DoorSetInstance.WallClearances"/>). Optional.</summary>
+        public IDictionary<string, double> WallClearances { get; set; }
     }
 
     /// <summary>
@@ -35,8 +38,9 @@ namespace Sentinel.Core.Placement
         public const double FamilyFrontToFacingDeg = 90.0;
 
         /// <summary>Convenience overload: resolves overrides and calculates in one call.</summary>
+        /// <param name="applyWallClearances">False gives the plan without measured push-outs (used to measure them).</param>
         public static PlacementPlan Calculate(DoorSetInstance instance, DoorSetDefinition definition,
-            DoorGeometry geometry, SentinelProject project)
+            DoorGeometry geometry, SentinelProject project, bool applyWallClearances = true)
         {
             var components = EffectiveSetResolver.Resolve(definition, instance?.Overrides, project.FindComponent);
             var plan = Calculate(new DoorPlacementInput
@@ -46,7 +50,8 @@ namespace Sentinel.Core.Placement
                 HingeOverride = instance?.HingeSideOverride,
                 Components = components,
                 Settings = project.Settings ?? new SentinelSettings(),
-                FindComponent = project.FindComponent
+                FindComponent = project.FindComponent,
+                WallClearances = applyWallClearances ? instance?.WallClearances : null
             });
             if (definition == null && instance != null && !string.IsNullOrEmpty(instance.DefinitionId))
             {
@@ -123,7 +128,7 @@ namespace Sentinel.Core.Placement
                 {
                     var side = sides[i];
                     var isMirror = i > 0;
-                    plan.Placements.Add(Place(comp, rule, side, isMirror, door, n, w, halfWidth, halfWall, hingeSign));
+                    plan.Placements.Add(Place(comp, rule, side, isMirror, door, n, w, halfWidth, halfWall, hingeSign, input.WallClearances));
                 }
             }
 
@@ -161,7 +166,8 @@ namespace Sentinel.Core.Placement
         }
 
         private static CalculatedPlacement Place(EffectiveComponent comp, PlacementRule rule, ResolvedSide side, bool isMirror,
-            DoorGeometry door, Vec3 n, Vec3 w, double halfWidth, double halfWall, double hingeSign)
+            DoorGeometry door, Vec3 n, Vec3 w, double halfWidth, double halfWall, double hingeSign,
+            IDictionary<string, double> clearances)
         {
             var def = comp.Component;
             var p = new CalculatedPlacement
@@ -216,6 +222,14 @@ namespace Sentinel.Core.Placement
                     sideSign = 0.0;
                     perp = rule.FromWallOffsetMm;
                     break;
+            }
+
+            // --- wall material in front of the door's wall face (measured in Revit, e.g. a lining in another link) ---
+            double clearance;
+            if (sideSign != 0.0 && clearances != null && clearances.TryGetValue(WallClearance.Key(p.SlotKey, side.ToString()), out clearance) && clearance > 0.5)
+            {
+                perp += sideSign * clearance;
+                p.WallClearanceMm = clearance;
             }
 
             // --- height ---
@@ -376,6 +390,9 @@ namespace Sentinel.Core.Placement
 
             if (Math.Abs(rule.FromWallOffsetMm) > 0.01)
                 sb.Append(", ").Append(rule.FromWallOffsetMm.ToString("0", inv)).Append(p.Side == ResolvedSide.InWall ? " mm from wall centre" : " mm from wall face");
+
+            if (p.WallClearanceMm > 0.5)
+                sb.Append(", moved ").Append(p.WallClearanceMm.ToString("0", inv)).Append(" mm out of a wall in front of the door's wall face");
 
             sb.Append(", h=").Append(mount.ToString("0", inv)).Append(" mm ")
               .Append(rule.HeightReference == HeightReference.DoorTop ? "above door head" : "above door bottom");

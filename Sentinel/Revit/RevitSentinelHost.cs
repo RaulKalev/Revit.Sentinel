@@ -5,9 +5,11 @@ using System.Windows.Threading;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Events;
 using Autodesk.Revit.UI;
+using Sentinel.Core.Geometry;
 using Sentinel.Core.Library;
 using Sentinel.Core.Models;
 using Sentinel.Core.Persistence;
+using Sentinel.Core.Placement;
 using Sentinel.Infrastructure;
 using Sentinel.Revit.Collectors;
 using Sentinel.Revit.Placement;
@@ -199,6 +201,67 @@ namespace Sentinel.Revit
             }, done, ex => new RefreshResult { Error = "Refresh failed: " + ex.Message });
         }
 
+        // ------------------------------------------------------------------ wall clearance
+
+        public void CheckWallClearances(IList<string> instanceIds, Action<OperationResult> done)
+        {
+            Run("CheckWallClearances", app =>
+            {
+                var instances = (instanceIds ?? new List<string>()).Select(Project.FindInstance).Where(i => i != null).ToList();
+                var sources = DoorDiscoveryService.VerifySources(_doc, instances, Project.Settings);
+                return OperationResult.Ok(UpdateWallClearances(instances, sources));
+            }, done, ex => OperationResult.Fail("Wall check failed: " + ex.Message));
+        }
+
+        /// <summary>
+        /// Measures, for every wall-side component, whether its calculated point lies inside wall material of any
+        /// loaded model and stores how far it has to move out. Returns a summary when something changed, else null.
+        /// </summary>
+        private string UpdateWallClearances(IList<DoorSetInstance> instances, IDictionary<string, SourceCheck> sources)
+        {
+            if (instances == null || instances.Count == 0) return null;
+            var probe = new WallMaterialProbe(_doc);
+            var reach = RevitUnits.MmToFt(WallClearance.MaxMm + 200);
+            int doorsChanged = 0, moved = 0;
+            foreach (var inst in instances)
+            {
+                var def = Project.FindDoorSet(inst.DefinitionId);
+                if (def == null || inst.IsIgnored) continue;
+                SourceCheck sc = null;
+                sources?.TryGetValue(inst.Id, out sc);
+                var geometry = sc?.Current?.Geometry ?? inst.Source?.LastKnownGeometry;
+                if (geometry == null || !geometry.IsValid) continue;
+
+                // Measured from the positions without earlier push-outs, so a re-check can also move components back.
+                var plan = DoorSetPlacementCalculator.Calculate(inst, def, geometry, Project, false);
+                var measured = new Dictionary<string, double>();
+                foreach (var p in plan.Placements.Where(x => !x.IsBuiltIn && !x.WallNormal.IsZero))
+                {
+                    var hit = new List<string>();
+                    var spans = probe.Spans(RevitUnits.ToXyzFt(p.Position), RevitUnits.ToXyzDir(p.WallNormal), reach, hit);
+                    var exit = WallClearance.ExitDistance(spans);
+                    if (exit < 0)
+                        SentinelLog.Warn("Wall check " + (inst.Source?.DisplayName ?? inst.Id) + " / " + p.Label +
+                                         ": wall material goes on too far to move out of (crossing wall?) – left as calculated.");
+                    else if (exit >= 1)
+                    {
+                        measured[WallClearance.Key(p.SlotKey, p.Side.ToString())] = exit;
+                        SentinelLog.Info("Wall check " + (inst.Source?.DisplayName ?? inst.Id) + " / " + p.Label + ": inside wall material of " +
+                                         string.Join(", ", hit) + ", moved " + Math.Round(exit) + " mm out.");
+                    }
+                }
+                if (WallClearance.Store(inst, measured))
+                {
+                    doorsChanged++;
+                    moved += measured.Count;
+                }
+            }
+            if (doorsChanged == 0) return null;
+            return moved > 0
+                ? moved + " component(s) on " + doorsChanged + " door(s) were inside a wall (e.g. a lining in another model) and are moved out to its face."
+                : "Wall check: components on " + doorsChanged + " door(s) are back on the door's wall face.";
+        }
+
         // ------------------------------------------------------------------ preview
 
         public void ShowPreview(PreviewScene scene, bool zoom, Action<OperationResult> done)
@@ -210,14 +273,15 @@ namespace Sentinel.Revit
 
                 var uidoc = ActiveUiDoc(app);
                 if (uidoc == null) return OperationResult.Fail("Activate the project \"" + _doc.Title + "\" to see the preview.");
+                string note = null;
 
                 if (zoom)
                 {
                     var current = scene?.Doors.FirstOrDefault(d => d.IsCurrent) ?? scene?.Doors.FirstOrDefault();
-                    if (current?.Door != null) FocusOn(uidoc, NavigationService.DoorBox(current.Door, current.Placements));
+                    if (current?.Door != null) note = FocusOn(uidoc, NavigationService.DoorBox(current.Door, current.Placements), Project.Settings.ZoomView);
                 }
                 uidoc.RefreshActiveView();
-                return OperationResult.Ok();
+                return OperationResult.Ok(note);
             }, done, ex => OperationResult.Fail("Preview failed: " + ex.Message));
         }
 
@@ -264,6 +328,9 @@ namespace Sentinel.Revit
             catch (Exception ex) { SentinelLog.Error("Raycast view unavailable", ex); }
 
             var sources = DoorDiscoveryService.VerifySources(_doc, instances, Project.Settings);
+            // Placement never trusts an old measurement: walls in the links may have changed since the preview.
+            var wallNote = UpdateWallClearances(instances, sources);
+            if (wallNote != null) SentinelLog.Info(wallNote);
             var ctx = new PlacementContext
             {
                 Doc = _doc,
@@ -383,16 +450,95 @@ namespace Sentinel.Revit
             {
                 var uidoc = ActiveUiDoc(app);
                 if (uidoc == null) return OperationResult.Fail("Activate the project \"" + _doc.Title + "\" first.");
-                return NavigationService.Navigate(uidoc, request, box => FocusOn(uidoc, box));
+                return NavigationService.Navigate(uidoc, request, box => FocusOn(uidoc, box, request.View ?? Project.Settings.ZoomView));
             }, done, ex => OperationResult.Fail("Navigation failed: " + ex.Message));
         }
 
-        /// <summary>Zooms to a box: in the active 3D view (if allowed by settings) or in the Sentinel Focus view.</summary>
-        private void FocusOn(UIDocument uidoc, BoundingBoxXYZ box)
+        /// <summary>
+        /// Zooms to a box in a floor plan of the door's level or in 3D (see <see cref="DoorZoomView"/>). Returns a note
+        /// for the status line when the requested view could not be used (null otherwise).
+        /// </summary>
+        private string FocusOn(UIDocument uidoc, BoundingBoxXYZ box, DoorZoomView mode)
         {
-            if (box == null) return;
+            if (box == null) return null;
             var padded = Geometry.GeometryUtils.Inflate(box, RevitUnits.MmToFt(1500));
 
+            if (mode == DoorZoomView.FloorPlan)
+            {
+                string why;
+                var plan = FindFloorPlan(uidoc, box, out why);
+                if (plan != null)
+                {
+                    if (uidoc.ActiveView.Id != plan.Id) uidoc.ActiveView = plan;
+                    var planView = uidoc.GetOpenUIViews().FirstOrDefault(v => v.ViewId == plan.Id);
+                    planView?.ZoomAndCenterRectangle(padded.Min, padded.Max);
+                    return null;
+                }
+                Focus3D(uidoc, padded);
+                return why + " Shown in 3D instead.";
+            }
+
+            Focus3D(uidoc, padded);
+            return null;
+        }
+
+        /// <summary>
+        /// A floor plan of the door's level, staying close to what the user works in: the active plan when it is on
+        /// that level, else a plan with the same view template / view type as the active plan, else the first plan of
+        /// the level. Plans whose crop region does not contain the door are skipped.
+        /// </summary>
+        private ViewPlan FindFloorPlan(UIDocument uidoc, BoundingBoxXYZ box, out string why)
+        {
+            why = null;
+            var level = LevelFinder.BelowOrLowest(_doc, box.Min.Z + RevitUnits.MmToFt(300));
+            if (level == null)
+            {
+                why = "The project has no levels.";
+                return null;
+            }
+            var centre = (box.Min + box.Max) / 2.0;
+            var plans = new FilteredElementCollector(_doc).OfClass(typeof(ViewPlan)).Cast<ViewPlan>()
+                .Where(p => !p.IsTemplate && p.ViewType == ViewType.FloorPlan && p.GenLevel != null && p.GenLevel.Id == level.Id && Shows(p, centre))
+                .OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (plans.Count == 0)
+            {
+                why = "No floor plan of " + level.Name + " shows this door.";
+                return null;
+            }
+
+            var active = uidoc.ActiveView as ViewPlan;
+            if (active != null && plans.Any(p => p.Id == active.Id)) return active;
+            if (active != null && active.ViewType == ViewType.FloorPlan)
+            {
+                var sameTemplate = active.ViewTemplateId != ElementId.InvalidElementId
+                    ? plans.FirstOrDefault(p => p.ViewTemplateId == active.ViewTemplateId)
+                    : null;
+                var sameType = plans.FirstOrDefault(p => p.GetTypeId() == active.GetTypeId() && p.Discipline == active.Discipline);
+                return sameTemplate ?? sameType ?? plans[0];
+            }
+            return plans[0];
+        }
+
+        /// <summary>True when the plan's crop region (if active) contains the point in plan.</summary>
+        private static bool Shows(ViewPlan plan, XYZ point)
+        {
+            try
+            {
+                if (!plan.CropBoxActive) return true;
+                var crop = plan.CropBox;
+                var local = crop.Transform.Inverse.OfPoint(point);
+                return local.X >= crop.Min.X && local.X <= crop.Max.X && local.Y >= crop.Min.Y && local.Y <= crop.Max.Y;
+            }
+            catch
+            {
+                return true;
+            }
+        }
+
+        /// <summary>Zooms in the active 3D view (if allowed by settings) or in the Sentinel Focus view with a section box.</summary>
+        private void Focus3D(UIDocument uidoc, BoundingBoxXYZ padded)
+        {
             View3D view = null;
             if (Project.Settings.PreviewInActiveView) view = uidoc.ActiveView as View3D;
             if (view == null || view.IsTemplate)

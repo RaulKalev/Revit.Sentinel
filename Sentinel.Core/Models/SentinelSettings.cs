@@ -81,12 +81,23 @@ namespace Sentinel.Core.Models
         /// </summary>
         public bool PreviewInActiveView { get; set; }
 
+        /// <summary>Default view for "Zoom to door" and the preview's auto-zoom; the other one is offered as an extra command.</summary>
+        public DoorZoomView ZoomView { get; set; } = DoorZoomView.View3D;
+
+        /// <summary>
+        /// Linked models by priority (link names without the instance number, e.g. "ITM_TP_AR.ifc"). When the same door
+        /// is modelled in several links, only the door of the highest model is listed; the others are shown as Ignored.
+        /// Links not named here follow in discovery order.
+        /// </summary>
+        public List<string> LinkPriority { get; set; } = new List<string>();
+
         public SentinelSettings Clone()
         {
             var c = (SentinelSettings)MemberwiseClone();
             c.DiscoveryLevelNames = new List<string>(DiscoveryLevelNames ?? new List<string>());
             c.DiscoveryLinkUniqueIds = new List<string>(DiscoveryLinkUniqueIds ?? new List<string>());
             c.CapturedParameterNames = new List<string>(CapturedParameterNames ?? new List<string>());
+            c.LinkPriority = new List<string>(LinkPriority ?? new List<string>());
             return c;
         }
     }

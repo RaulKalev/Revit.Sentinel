@@ -2,6 +2,7 @@
     x:Class="Sentinel.UI.Views.SettingsView"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
     xmlns:ui="clr-namespace:Sentinel.UI">
     <UserControl.Resources>
         <ResourceDictionary>
@@ -51,6 +52,112 @@
                 Text="Project settings are stored in the Revit project together with the Sentinel data." />
 
             <StackPanel IsEnabled="{Binding IsEditable}">
+                <!--  Zoom and preview (used every day, so first)  -->
+                <TextBlock Style="{StaticResource GroupTitle}" Text="Zoom and preview" />
+                <Border Padding="0,2" Style="{StaticResource Card}">
+                    <StackPanel>
+                        <DockPanel Style="{StaticResource SettingRow}">
+                            <Border
+                                VerticalAlignment="Center"
+                                AutomationProperties.Name="Zoom to doors in"
+                                DockPanel.Dock="Right"
+                                Style="{StaticResource Segmented}">
+                                <StackPanel Orientation="Horizontal">
+                                    <RadioButton
+                                        Content="Floor plan"
+                                        GroupName="ZoomView"
+                                        IsChecked="{Binding ZoomInFloorPlan}"
+                                        Style="{StaticResource Segment}"
+                                        ToolTip="Open a floor plan of the door's level (your active plan when it is on that level)" />
+                                    <RadioButton
+                                        Content="3D view"
+                                        GroupName="ZoomView"
+                                        IsChecked="{Binding ZoomIn3D}"
+                                        Style="{StaticResource Segment}"
+                                        ToolTip="Open a 3D view with a section box around the door" />
+                                </StackPanel>
+                            </Border>
+                            <StackPanel Margin="0,10,16,10" VerticalAlignment="Center">
+                                <TextBlock Foreground="{DynamicResource Text.Primary}" Text="Zoom to doors in" />
+                                <TextBlock
+                                    Margin="0,2,0,0"
+                                    Style="{StaticResource Type.Caption}"
+                                    Text="Also used by the preview's auto zoom. The other view stays one click away in the review panel." />
+                            </StackPanel>
+                        </DockPanel>
+                        <Rectangle Style="{StaticResource Hairline}" />
+                        <CheckBox
+                            Margin="14,12"
+                            Content="In 3D, use the active 3D view instead of the 'Sentinel Focus' view"
+                            IsChecked="{Binding PreviewInActiveView}"
+                            Style="{StaticResource Input.Check}" />
+                    </StackPanel>
+                </Border>
+
+                <!--  Doors modelled in several links  -->
+                <TextBlock Style="{StaticResource GroupTitle}" Text="Doors in several models" />
+                <Border Padding="0,2" Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock
+                            Margin="14,12,14,8"
+                            Style="{StaticResource Type.Caption}"
+                            Text="When the same door is modelled in more than one linked model, only the door from the highest model is listed. The others are shown under Ignored."
+                            TextWrapping="Wrap" />
+                        <TextBlock
+                            Margin="14,0,14,12"
+                            Style="{StaticResource Type.Secondary}"
+                            Text="Find doors on the Doors page to list the linked models here."
+                            Visibility="{Binding HasLinkPriority, Converter={StaticResource InverseBoolToVis}}" />
+                        <ItemsControl
+                            Margin="0,0,0,6"
+                            AutomationProperties.Name="Model priority"
+                            ItemsSource="{Binding LinkPriority}"
+                            Visibility="{Binding HasLinkPriority, Converter={StaticResource BoolToVis}}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <DockPanel Margin="14,2,8,2">
+                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                            <Button
+                                                AutomationProperties.Name="Move up"
+                                                Command="{Binding DataContext.MoveLinkUpCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding}"
+                                                Style="{StaticResource Button.Icon}"
+                                                ToolTip="Higher priority">
+                                                <materialDesign:PackIcon
+                                                    Width="17"
+                                                    Height="17"
+                                                    Kind="ChevronUp" />
+                                            </Button>
+                                            <Button
+                                                AutomationProperties.Name="Move down"
+                                                Command="{Binding DataContext.MoveLinkDownCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding}"
+                                                Style="{StaticResource Button.Icon}"
+                                                ToolTip="Lower priority">
+                                                <materialDesign:PackIcon
+                                                    Width="17"
+                                                    Height="17"
+                                                    Kind="ChevronDown" />
+                                            </Button>
+                                        </StackPanel>
+                                        <TextBlock
+                                            Width="22"
+                                            VerticalAlignment="Center"
+                                            Foreground="{DynamicResource Text.Tertiary}"
+                                            Text="{Binding Rank}" />
+                                        <TextBlock
+                                            VerticalAlignment="Center"
+                                            Foreground="{DynamicResource Text.Primary}"
+                                            Text="{Binding Name}"
+                                            TextTrimming="CharacterEllipsis"
+                                            ToolTip="{Binding Name}" />
+                                    </DockPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
                 <!--  Door handing  -->
                 <TextBlock Style="{StaticResource GroupTitle}" Text="Door handing" />
                 <Border Padding="0,2" Style="{StaticResource Card}">
@@ -172,8 +279,8 @@
                     </StackPanel>
                 </Border>
 
-                <!--  Placement and preview  -->
-                <TextBlock Style="{StaticResource GroupTitle}" Text="Placement and preview" />
+                <!--  Placement  -->
+                <TextBlock Style="{StaticResource GroupTitle}" Text="Placement" />
                 <Border Padding="0,2" Style="{StaticResource Card}">
                     <StackPanel>
                         <DockPanel Style="{StaticResource SettingRow}">
@@ -188,12 +295,6 @@
                                 ToolTip="If set, placed elements get 'SetCode / DoorMark' in this instance text parameter (for schedules)" />
                             <TextBlock Style="{StaticResource RowLabel}" Text="Identity text parameter" />
                         </DockPanel>
-                        <Rectangle Style="{StaticResource Hairline}" />
-                        <CheckBox
-                            Margin="14,12"
-                            Content="Preview and zoom in the active 3D view instead of the 'Sentinel Focus' view"
-                            IsChecked="{Binding PreviewInActiveView}"
-                            Style="{StaticResource Input.Check}" />
                     </StackPanel>
                 </Border>
             </StackPanel>

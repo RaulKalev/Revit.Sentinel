@@ -54,7 +54,12 @@ namespace Sentinel.UI.ViewModels
             RemoveCommand = new RelayCommand(Remove, () => _owner.IsEditable && !IsRemoved);
             RestoreCommand = new RelayCommand(Restore, () => _owner.IsEditable && IsRemoved);
             AcceptManualCommand = new RelayCommand(AcceptManual, () => _owner.IsEditable && _records.Any(r => r.State == ComponentState.ManuallyModified));
+            UseForDoorCommand = new RelayCommand(UseForDoor, () => _owner.IsEditable && IsMovedInModel);
+            UseForSetCommand = new RelayCommand(UseForSet, () => _owner.IsEditable && IsMovedInModel && CanUseForSet);
         }
+
+        public RelayCommand UseForDoorCommand { get; }
+        public RelayCommand UseForSetCommand { get; }
 
         public string RuleId { get; }
         public string Label { get; }
@@ -173,18 +178,28 @@ namespace Sentinel.UI.ViewModels
             var edited = Editor.ToRule();
             if (edited == null || _owner.Instance == null) return;
             var inst = _owner.Instance;
+            if (!SaveForDoor(edited, EditComponent)) return;
 
+            _owner.SetEditing(null);
+            _owner.Changed("override " + Label);
+            _owner.Main.SetStatus(Label + " updated for this door" + (inst.HasPlacedElements ? " – use Update placement to apply it in the model." : "."));
+        }
+
+        /// <summary>Stores <paramref name="edited"/> for this door only: the added component's rule, or an override of the template.</summary>
+        private bool SaveForDoor(PlacementRule edited, ComponentDefinition component)
+        {
+            var inst = _owner.Instance;
             var added = AddedSlot;
             if (added != null)
             {
                 added.Rule = edited;
-                if (EditComponent != null) added.ComponentDefinitionId = EditComponent.Id;
+                if (component != null) added.ComponentDefinitionId = component.Id;
                 inst.Touch();
             }
             else
             {
                 var template = TemplateSlot;
-                if (template == null) return;
+                if (template == null) return false;
                 var b = template.Rule ?? new PlacementRule();
                 var ov = new ComponentRuleOverride { RuleId = RuleId };
                 if (edited.Reference != b.Reference) ov.Reference = edited.Reference;
@@ -196,16 +211,95 @@ namespace Sentinel.UI.ViewModels
                 if (edited.HeightReference != b.HeightReference) ov.HeightReference = edited.HeightReference;
                 if (edited.Orientation != b.Orientation) ov.Orientation = edited.Orientation;
                 if (Math.Abs(edited.RotationDeg - b.RotationDeg) > 1e-6) ov.RotationDeg = edited.RotationDeg;
-                if (EditComponent != null && EditComponent.Id != template.ComponentDefinitionId) ov.ComponentDefinitionId = EditComponent.Id;
+                if (component != null && component.Id != template.ComponentDefinitionId) ov.ComponentDefinitionId = component.Id;
+                else if (component == null) ov.ComponentDefinitionId = inst.Overrides?.Find(RuleId)?.ComponentDefinitionId; // keep a swapped component
 
                 DoorSetInstanceOperations.ClearRuleOverride(inst, RuleId);
                 if (!ov.IsEmpty) DoorSetInstanceOperations.OverrideRule(inst, ov);
             }
-
-            _owner.SetEditing(null);
-            _owner.Changed("override " + Label);
-            _owner.Main.SetStatus(Label + " updated for this door" + (inst.HasPlacedElements ? " – use Update placement to apply it in the model." : "."));
+            return true;
         }
+
+        // ------------------------------------------------------------------ position moved in the model
+
+        /// <summary>A placed element of this component that was moved in Revit (kept or not yet decided).</summary>
+        private PlacedComponentInstance MovedRecord =>
+            IsBuiltIn ? null : _records.FirstOrDefault(r => r.ActualPosition.HasValue && !string.IsNullOrEmpty(r.ElementUniqueId) &&
+                                                          (r.State == ComponentState.ManuallyModified || r.ManualPositionAccepted));
+
+        public bool IsMovedInModel => MovedRecord != null && !IsRemoved;
+
+        /// <summary>"Use for all DS-02 doors…" (only for components of the set type, not ones added on this door).</summary>
+        public string UseForSetText => _owner.Definition == null ? "" : "Use for all " + _owner.Definition.Code + " doors…";
+        public bool CanUseForSet => !IsAdded && TemplateSlot != null;
+
+        private RuleFromPositionResult DeriveFromModel(out PlacementPlan before)
+        {
+            before = null;
+            var inst = _owner.Instance;
+            var rec = MovedRecord;
+            if (inst == null || rec == null) return new RuleFromPositionResult { Error = "This component was not moved in the model." };
+            before = _owner.Main.Session.Plan(inst);
+            var slot = before?.Placements.FirstOrDefault(p => p.SlotKey == rec.SlotKey);
+            if (slot == null) return new RuleFromPositionResult { Error = "The component is no longer part of this door's plan." };
+            return RuleFromPosition.Derive(_effective.Rule ?? new PlacementRule(), slot, _owner.Main.Session.GeometryFor(inst), before.ResolvedHinge,
+                rec.ActualPosition.Value, rec.ActualRotationDeg, _effective.Component?.DefaultMountingHeightMm);
+        }
+
+        private void UseForDoor()
+        {
+            PlacementPlan before;
+            var r = DeriveFromModel(out before);
+            if (!r.Success)
+            {
+                _owner.Main.SetStatus(Label + ": " + r.Error, true);
+                return;
+            }
+            var inst = _owner.Instance;
+            if (!SaveForDoor(r.Rule, null)) return;
+            RuleFromPosition.AdoptPlacedPosition(inst, before, _owner.Main.Session.Plan(inst), RuleId);
+            _owner.SetEditing(null);
+            _owner.Changed("use model position " + Label);
+            _owner.Main.SetStatus(Label + " on this door now follows its position in the model (" + r.ChangeText + ").");
+        }
+
+        private void UseForSet()
+        {
+            var def = _owner.Definition;
+            var template = TemplateSlot;
+            var inst = _owner.Instance;
+            if (def == null || template == null || inst == null) return;
+            PlacementPlan before;
+            var r = DeriveFromModel(out before);
+            if (!r.Success)
+            {
+                _owner.Main.SetStatus(Label + ": " + r.Error, true);
+                return;
+            }
+
+            var project = _owner.ProjectData;
+            var others = project.DoorSetInstances.Where(i => i != inst && i.DefinitionId == def.Id).ToList();
+            var placedOthers = others.Count(i => i.HasPlacedElements);
+            var withOwnOverride = others.Count(i => i.Overrides?.Find(RuleId) != null);
+            var message = "Use this " + Label + " position on every " + def.DisplayName + " door?\n\n" + Capitalize(r.ChangeText) + "." +
+                          (placedOthers > 0 ? "\n\n" + placedOthers + " other placed door(s) will show Modified. Use Update placement to move their " + Label + "." : "") +
+                          (withOwnOverride > 0 ? "\n" + withOwnOverride + " door(s) with their own " + Label + " adjustment keep it." : "");
+            _owner.Main.Dialogs.Confirm("Use position for " + def.Code, message, null, "Use for " + (others.Count + 1) + " door(s)", "Cancel", ok =>
+            {
+                if (!ok) return;
+                template.Rule = r.Rule;
+                def.Touch();
+                DoorSetInstanceOperations.ClearRuleOverride(inst, RuleId); // this door now simply follows the set type
+                RuleFromPosition.AdoptPlacedPosition(inst, before, _owner.Main.Session.Plan(inst), RuleId);
+                _owner.SetEditing(null);
+                _owner.Changed("use model position for " + def.Code);
+                _owner.Main.Doors.UpdateRows();
+                _owner.Main.SetStatus(def.Code + " " + Label + " updated from this door (" + r.ChangeText + ")" +
+                                      (placedOthers > 0 ? " – use Update placement on the other " + def.Code + " doors." : "."));
+            });
+        }
+
+        private static string Capitalize(string s) => string.IsNullOrEmpty(s) ? s : char.ToUpperInvariant(s[0]) + s.Substring(1);
 
         private void Reset()
         {

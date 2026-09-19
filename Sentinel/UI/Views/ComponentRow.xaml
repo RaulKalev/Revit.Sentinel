@@ -205,14 +205,37 @@
                         TextWrapping="Wrap" />
                 </DockPanel>
 
-                <Button
-                    Margin="-8,4,0,0"
-                    HorizontalAlignment="Left"
-                    Command="{Binding AcceptManualCommand}"
-                    Content="Keep the manual position"
-                    Style="{StaticResource Button.Plain}"
-                    ToolTip="Accept the position the component was moved to in Revit"
-                    Visibility="{Binding IsEnabled, RelativeSource={RelativeSource Self}, Converter={StaticResource BoolToVis}}" />
+                <!--  Moved in Revit: make that position the rule (this door or the whole set type), or just keep it  -->
+                <StackPanel Margin="0,8,0,0" Visibility="{Binding IsMovedInModel, Converter={StaticResource BoolToVis}}">
+                    <TextBlock
+                        Margin="0,0,0,6"
+                        Style="{StaticResource Type.Caption}"
+                        Text="Moved in the model. Use that position from now on:"
+                        TextWrapping="Wrap" />
+                    <WrapPanel>
+                        <Button
+                            Margin="0,0,6,6"
+                            Command="{Binding UseForDoorCommand}"
+                            Content="For this door"
+                            Style="{StaticResource Button.Secondary}"
+                            ToolTip="Store the moved position as this door's placement (the set type is unchanged)" />
+                        <Button
+                            Margin="0,0,6,6"
+                            Command="{Binding UseForSetCommand}"
+                            Content="{Binding UseForSetText}"
+                            Style="{StaticResource Button.Secondary}"
+                            ToolTip="Measure the moved position from the door and make it the rule of the door set type, for every door that uses it"
+                            Visibility="{Binding CanUseForSet, Converter={StaticResource BoolToVis}}" />
+                    </WrapPanel>
+                    <Button
+                        Margin="-8,0,0,0"
+                        HorizontalAlignment="Left"
+                        Command="{Binding AcceptManualCommand}"
+                        Content="Only keep it where it is"
+                        Style="{StaticResource Button.Plain}"
+                        ToolTip="Leave the element where it was moved without changing any rule (Update placement will not move it back)"
+                        Visibility="{Binding IsEnabled, RelativeSource={RelativeSource Self}, Converter={StaticResource BoolToVis}}" />
+                </StackPanel>
 
                 <!--  Details on demand: family, state, how the position is calculated  -->
                 <ToggleButton

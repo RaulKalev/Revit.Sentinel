@@ -45,6 +45,9 @@ namespace Sentinel.Core.Placement
 
         public ResolvedSide Side { get; set; }
 
+        /// <summary>Push-out applied from the door's wall face because wall material is in the way (mm, 0 = none).</summary>
+        public double WallClearanceMm { get; set; }
+
         /// <summary>Human readable reason for this location (traceability).</summary>
         public string Explanation { get; set; }
 

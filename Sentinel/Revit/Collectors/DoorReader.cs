@@ -143,6 +143,7 @@ namespace Sentinel.Revit.Collectors
             double width = 0, height = 0, thickness = 0;
             var hinge = HingeSide.Unknown;
             var source = DoorGeometrySource.FamilyInstance;
+            var hingeFromHandle = false;
             var wallMeasured = false;
 
             if (fi != null && lp != null && IsHorizontal(fi.FacingOrientation) && IsHorizontal(fi.HandOrientation))
@@ -194,7 +195,19 @@ namespace Sentinel.Revit.Collectors
                 if (width <= 0) width = rect.LongLength;
                 if (height <= 0) height = maxZ - minZ;
                 thickness = rect.ShortLength;
-                warnings.Add("Door orientation estimated from geometry; hinge side unknown.");
+
+                // Hinge side from the handle: it sticks out of the leaf at handle height, on the latch side.
+                var handle = DetectHandle(door, new XYZ(rect.CenterX, rect.CenterY, minZ), widthAxis, facing);
+                if (handle.Found)
+                {
+                    hinge = handle.Hinge;
+                    hingeFromHandle = true;
+                    warnings.Add("Door orientation estimated from geometry; hinge side read from the door handle (" + handle.Note + ").");
+                }
+                else
+                {
+                    warnings.Add("Door orientation estimated from geometry; hinge side unknown (" + handle.Note + ").");
+                }
             }
 
             // No host wall measured yet (IFC, or a family door without a Wall host): find the nearest linked wall.
@@ -238,8 +251,32 @@ namespace Sentinel.Revit.Collectors
                 HeightMm = RevitUnits.FtToMm(height),
                 WallThicknessMm = RevitUnits.FtToMm(thickness),
                 Hinge = hinge,
+                HingeFromHandle = hingeFromHandle,
                 Source = source
             };
+        }
+
+        /// <summary>Runs <see cref="HandleDetector"/> on the door's geometry pieces, in the door frame (mm).</summary>
+        private HandleDetection DetectHandle(Element door, XYZ centre, XYZ widthAxis, XYZ facing)
+        {
+            try
+            {
+                var pieces = GeometryUtils.GetPointGroups(door)
+                    .Select(g => (IList<Vec3>)g.Select(p =>
+                    {
+                        var d = p - centre;
+                        return new Vec3(RevitUnits.FtToMm(d.DotProduct(widthAxis)), RevitUnits.FtToMm(d.DotProduct(facing)), RevitUnits.FtToMm(d.Z));
+                    }).ToList())
+                    .ToList();
+                var result = HandleDetector.Detect(pieces);
+                SentinelLog.Info("Handle check " + (ReadMark(door) ?? door.UniqueId) + ": " + pieces.Count + " piece(s), " + result.Note);
+                return result;
+            }
+            catch (Exception ex)
+            {
+                SentinelLog.Error("Handle check failed for " + door.UniqueId, ex);
+                return new HandleDetection { Note = "handle check failed" };
+            }
         }
 
         private bool MeasureNearestWall(XYZ origin, XYZ facing, double widthFt, out double offset, out double thickness)

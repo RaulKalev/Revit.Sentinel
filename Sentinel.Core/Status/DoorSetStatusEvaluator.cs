@@ -50,6 +50,14 @@ namespace Sentinel.Core.Status
                     r.Issues.Add(new StatusIssue(IssueSeverity.Info, "Ignored", "Ignored: " + inst.IgnoreReason));
                 return r;
             }
+            if (inst.IsNoAccessControl)
+            {
+                r.Status = SetStatus.NoAccessControl;
+                if (inst.HasPlacedElements)
+                    r.Issues.Add(new StatusIssue(IssueSeverity.Warning, IssueCodes.NoAccessControlHasComponents,
+                        "Marked as no access control, but placed components are still in the model."));
+                return r;
+            }
             if (string.IsNullOrEmpty(inst.DefinitionId))
             {
                 r.Status = SetStatus.Unassigned;
@@ -139,6 +147,7 @@ namespace Sentinel.Core.Status
             {
                 case SetStatus.MissingComponent: return "Missing Component";
                 case SetStatus.SourceChanged: return "Source Changed";
+                case SetStatus.NoAccessControl: return "No access control";
                 default: return s.ToString();
             }
         }

@@ -164,7 +164,8 @@ namespace Sentinel.Revit.Preview
             var s = 60.0;
             Poly(segs, doorColor, a - w * s - n * s, a + w * s - n * s, a + w * s + n * s, a - w * s + n * s, a - w * s - n * s);
 
-            foreach (var p in d.Placements) AddPlacement(segs, p, alpha);
+            // Built-in components (e.g. a lock inside the magnet contact family) have no location of their own.
+            foreach (var p in d.Placements.Where(x => !x.IsBuiltIn)) AddPlacement(segs, p, alpha);
         }
 
         private static void AddPlacement(List<Segment> segs, CalculatedPlacement p, int alpha)

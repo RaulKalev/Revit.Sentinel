@@ -67,8 +67,11 @@ namespace Sentinel.UI.ViewModels
             PlaceCommand = new RelayCommand(PlaceAutomatically, () => CanEdit && _selectedRows.Any(r => r.IsAssigned));
             UpdateCommand = new RelayCommand(() => UpdatePlacement(_selectedRows, false), () => CanEdit && _selectedRows.Any(r => r.IsAssigned && r.HasPlacedElements));
             IgnoreCommand = new RelayCommand(Ignore, () => CanEdit && _selectedRows.Any(r => r.Instance == null || !r.Instance.IsIgnored));
-            UnignoreCommand = new RelayCommand(Unignore, () => CanEdit && _selectedRows.Any(r => r.Instance != null && r.Instance.IsIgnored));
+            UnignoreCommand = new RelayCommand(Unignore, () => CanEdit && _selectedRows.Any(r => r.IsLeftOutDuplicate || (r.Instance != null && r.Instance.IsIgnored)));
+            NoAccessControlCommand = new RelayCommand(() => MarkNoAccessControl(_selectedRows.ToList()),
+                () => CanEdit && _selectedRows.Any(r => r.Status != SetStatus.NoAccessControl));
             ZoomCommand = new RelayCommand(() => Zoom(SelectedRow), () => SelectedRow != null);
+            ZoomAlternativeCommand = new RelayCommand(() => Zoom(SelectedRow, AlternativeZoomView), () => SelectedRow != null);
             SelectComponentsCommand = new RelayCommand(() => SelectComponents(SelectedRow), () => SelectedRow != null && SelectedRow.HasPlacedElements);
             ClearSelectionCommand = new RelayCommand(() => SelectKeys(new List<string>()), () => _selectedRows.Count > 0);
             SelectSourceDoorCommand = new RelayCommand(() => SelectSourceDoor(SelectedRow), () => SelectedRow != null);
@@ -109,7 +112,9 @@ namespace Sentinel.UI.ViewModels
         public RelayCommand UpdateCommand { get; }
         public RelayCommand IgnoreCommand { get; }
         public RelayCommand UnignoreCommand { get; }
+        public RelayCommand NoAccessControlCommand { get; }
         public RelayCommand ZoomCommand { get; }
+        public RelayCommand ZoomAlternativeCommand { get; }
         public RelayCommand SelectComponentsCommand { get; }
 
         /// <summary>Raised after a rebuild so the view can restore the grid selection (keys).</summary>
@@ -219,6 +224,7 @@ namespace Sentinel.UI.ViewModels
         public int CountPlaced { get; private set; }
         public int CountAttention { get; private set; }
         public int CountIgnored { get; private set; }
+        public int CountNoAccessControl { get; private set; }
 
         private bool _inspectorVisible = true;
 
@@ -256,7 +262,7 @@ namespace Sentinel.UI.ViewModels
                 PrimaryAction = "Update";
                 return;
             }
-            PrimaryAction = _selectedRows.Any(r => !r.IsAssigned && (r.Instance == null || !r.Instance.IsIgnored)) ? "Assign" : "";
+            PrimaryAction = _selectedRows.Any(r => r.Status == SetStatus.Unassigned) ? "Assign" : "";
         }
 
         private static bool IsAttention(DoorRowViewModel r) =>
@@ -286,6 +292,7 @@ namespace Sentinel.UI.ViewModels
 
         public void OnActivated()
         {
+            OnPropertiesChanged(nameof(ZoomText), nameof(ZoomAlternativeText), nameof(IsAlternativeZoom3D)); // setting may have changed
             ReloadDefinitions();
             UpdateRows();
         }
@@ -320,7 +327,9 @@ namespace Sentinel.UI.ViewModels
         public void ReloadDefinitions()
         {
             var current = AssignDefinition?.Id;
-            CollectionSync.Sync(Definitions, Project.DoorSetDefinitions.OrderBy(d => d.Code, StringComparer.OrdinalIgnoreCase).ToList());
+            var choices = Project.DoorSetDefinitions.OrderBy(d => d.Code, StringComparer.OrdinalIgnoreCase).ToList();
+            choices.Add(NoAccessControlChoice.Definition); // last, so it is never the default choice
+            CollectionSync.Sync(Definitions, choices);
             AssignDefinition = Definitions.FirstOrDefault(d => d.Id == current) ?? Definitions.FirstOrDefault();
         }
 
@@ -397,6 +406,8 @@ namespace Sentinel.UI.ViewModels
                 var msg = result.Doors.Count + " door(s) found" +
                           (result.CountsByLink.Count > 1 ? " (" + string.Join(", ", result.CountsByLink) + ")." : " in " + result.LinkName + ".");
                 if (result.Warnings.Count > 0) msg += " " + string.Join(" ", result.Warnings);
+                var leftOut = Rows.Count(r => r.IsLeftOutDuplicate);
+                if (leftOut > 0) msg += " " + leftOut + " door(s) are also in a higher-priority model and are listed under Ignored.";
                 // The refresh that follows keeps the discovery result in front of its own summary.
                 if (Project.DoorSetInstances.Count > 0) RefreshStatus(null, msg);
                 else _main.SetStatus(msg, false);
@@ -465,6 +476,7 @@ namespace Sentinel.UI.ViewModels
         public void RebuildRows()
         {
             var keep = _selectedRows.Select(r => r.Key).ToList();
+            DuplicatePriority.Apply(Session.DiscoveredDoors, Project.Settings.LinkPriority);
             var matches = DoorMatcher.Match(Session.DiscoveredDoors, Project.DoorSetInstances);
 
             var reidentified = false;
@@ -491,6 +503,7 @@ namespace Sentinel.UI.ViewModels
         /// <summary>Recomputes status/text of all rows in place (after edits, placement, refresh).</summary>
         public void UpdateRows()
         {
+            DuplicatePriority.Apply(Session.DiscoveredDoors, Project.Settings.LinkPriority); // priority may have changed in Settings
             foreach (var r in Rows)
             {
                 if (r.Instance != null && !Project.DoorSetInstances.Contains(r.Instance)) r.Instance = null;
@@ -547,7 +560,8 @@ namespace Sentinel.UI.ViewModels
                 case "Placed": return r.Status == SetStatus.Placed;
                 case "Attention": return IsAttention(r);
                 case "Ignored": return r.Status == SetStatus.Ignored;
-                default: return true;
+                case "NoAccessControl": return r.Status == SetStatus.NoAccessControl;
+                default: return r.Status != SetStatus.Ignored; // ignored doors (incl. left-out duplicates) have their own filter
             }
         }
 
@@ -565,16 +579,19 @@ namespace Sentinel.UI.ViewModels
             }
             int C(SetStatus s) => Rows.Count(r => r.Status == s);
             var attention = C(SetStatus.Modified) + C(SetStatus.MissingComponent) + C(SetStatus.SourceChanged) + C(SetStatus.Orphaned) + C(SetStatus.Error);
-            CountAll = total;
+            CountAll = total - C(SetStatus.Ignored);
             CountUnassigned = C(SetStatus.Unassigned);
             CountReady = C(SetStatus.Ready) + C(SetStatus.Preview);
             CountPlaced = C(SetStatus.Placed);
             CountAttention = Rows.Count(r => IsAttention(r));
             CountIgnored = C(SetStatus.Ignored);
-            OnPropertiesChanged(nameof(CountAll), nameof(CountUnassigned), nameof(CountReady), nameof(CountPlaced), nameof(CountAttention), nameof(CountIgnored));
+            CountNoAccessControl = C(SetStatus.NoAccessControl);
+            OnPropertiesChanged(nameof(CountAll), nameof(CountUnassigned), nameof(CountReady), nameof(CountPlaced), nameof(CountAttention),
+                nameof(CountIgnored), nameof(CountNoAccessControl));
             UpdatePrimaryAction();
             Summary = total + " doors • " + C(SetStatus.Unassigned) + " unassigned • " + C(SetStatus.Ready) + " ready • " +
-                      C(SetStatus.Placed) + " placed • " + attention + " need attention • showing " + shown;
+                      C(SetStatus.Placed) + " placed • " + (CountNoAccessControl > 0 ? CountNoAccessControl + " no access control • " : "") + attention +
+                      " need attention • showing " + shown;
         }
 
         // ------------------------------------------------------------------ edits
@@ -594,6 +611,11 @@ namespace Sentinel.UI.ViewModels
         {
             var def = AssignDefinition;
             if (def == null) return;
+            if (NoAccessControlChoice.Is(def))
+            {
+                MarkNoAccessControl(_selectedRows.ToList());
+                return;
+            }
             var placedChanged = 0;
             foreach (var row in _selectedRows)
             {
@@ -658,6 +680,60 @@ namespace Sentinel.UI.ViewModels
             UpdateRows();
         }
 
+        /// <summary>
+        /// Marks doors as needing no access control. Doors with placed components ask first: the components are deleted.
+        /// </summary>
+        public void MarkNoAccessControl(IList<DoorRowViewModel> rows)
+        {
+            rows = (rows ?? new List<DoorRowViewModel>()).Where(r => r.Status != SetStatus.NoAccessControl).ToList();
+            if (rows.Count == 0)
+            {
+                _main.SetStatus("The selected doors are already marked as no access control.");
+                return;
+            }
+            Action mark = () =>
+            {
+                foreach (var row in rows)
+                {
+                    var inst = EnsureInstance(row, null);
+                    if (inst == null) continue;
+                    DoorSetInstanceOperations.MarkNoAccessControl(inst);
+                    row.Update();
+                }
+                _main.MarkDirty("no access control");
+                UpdateRows();
+            };
+
+            var placed = rows.Where(r => r.HasPlacedElements).ToList();
+            if (placed.Count == 0)
+            {
+                mark();
+                _main.SetStatus(rows.Count + " door(s) marked as no access control.");
+                return;
+            }
+            var n = placed.Sum(r => r.Instance.Components.Count(c => !string.IsNullOrEmpty(c.ElementUniqueId)));
+            _main.Dialogs.Confirm("No access control",
+                "Mark " + rows.Count + " door(s) as no access control?\n\n" + placed.Count + " of them have placed components; " + n +
+                " element(s) will be deleted from the model.", null, "Mark and delete " + n + " element(s)", "Cancel", ok =>
+                {
+                    if (!ok) return;
+                    _main.CancelPendingSave();
+                    _main.BeginBusy("Deleting components…");
+                    _main.Host.DeletePlacedComponents(placed.Select(r => r.Instance.Id).ToList(), true, r =>
+                    {
+                        _main.EndBusy();
+                        if (!r.Success)
+                        {
+                            _main.SetStatus(r.Message, true);
+                            UpdateRows();
+                            return;
+                        }
+                        mark();
+                        _main.SetStatus(rows.Count + " door(s) marked as no access control; " + r.Message);
+                    });
+                });
+        }
+
         private void Ignore()
         {
             foreach (var row in _selectedRows)
@@ -665,14 +741,18 @@ namespace Sentinel.UI.ViewModels
                 var inst = EnsureInstance(row, null);
                 if (inst == null) continue;
                 inst.IsIgnored = true;
+                inst.NoAccessControl = false;
                 inst.Touch();
             }
             _main.MarkDirty("ignore");
             UpdateRows();
+            _main.SetStatus("Ignored doors are listed under the Ignored filter.");
         }
 
         private void Unignore()
         {
+            // Left-out duplicates: an (empty) instance of their own keeps them listed next to the preferred door.
+            foreach (var row in _selectedRows.Where(r => r.IsLeftOutDuplicate)) EnsureInstance(row, null);
             foreach (var row in _selectedRows.Where(r => r.Instance != null && r.Instance.IsIgnored))
             {
                 row.Instance.IsIgnored = false;
@@ -701,7 +781,7 @@ namespace Sentinel.UI.ViewModels
             foreach (var r in candidates)
             {
                 var s = AssignmentRuleEvaluator.Suggest(Project.AssignmentRules, DoorFacts.FromSource(r.Source));
-                var def = s != null ? Project.FindDoorSet(s.DefinitionId) : null;
+                var def = s != null ? Project.FindSetChoice(s.DefinitionId) : null;
                 if (def != null) suggestions.Add(Tuple.Create(r, def, s.Explanation));
             }
             if (suggestions.Count == 0)
@@ -719,9 +799,11 @@ namespace Sentinel.UI.ViewModels
                     if (!ok) return;
                     foreach (var s in suggestions)
                     {
-                        var inst = EnsureInstance(s.Item1, s.Item2);
+                        var none = NoAccessControlChoice.Is(s.Item2);
+                        var inst = EnsureInstance(s.Item1, none ? null : s.Item2);
                         if (inst == null) continue;
-                        DoorSetInstanceOperations.AssignDefinition(inst, s.Item2);
+                        if (none) DoorSetInstanceOperations.MarkNoAccessControl(inst);
+                        else DoorSetInstanceOperations.AssignDefinition(inst, s.Item2);
                         inst.Notes = string.IsNullOrWhiteSpace(inst.Notes) ? "Assigned by " + s.Item3 : inst.Notes;
                     }
                     _main.MarkDirty("rule suggestions");
@@ -843,18 +925,28 @@ namespace Sentinel.UI.ViewModels
 
         // ------------------------------------------------------------------ navigation
 
-        public void Zoom(DoorRowViewModel row)
+        /// <summary>Zooms to the door in the default view (Settings), or in <paramref name="view"/> when given.</summary>
+        public void Zoom(DoorRowViewModel row, DoorZoomView? view = null)
         {
             if (row == null) return;
             _main.Host.Navigate(new NavigationRequest
             {
                 Kind = NavigationKind.ZoomToDoor,
+                View = view,
                 Source = row.Source,
                 Geometry = row.Door?.Geometry ?? row.Instance?.Source?.LastKnownGeometry,
                 ElementUniqueIds = row.Instance?.Components.Select(c => c.ElementUniqueId).Where(u => !string.IsNullOrEmpty(u)).ToList()
                                    ?? new List<string>()
-            }, r => { if (!r.Success) _main.SetStatus(r.Message, true); });
+            }, r => { if (!r.Success || !string.IsNullOrEmpty(r.Message)) _main.SetStatus(r.Message, !r.Success); });
         }
+
+        /// <summary>The view "Zoom to door" is not set to open (offered as an extra command).</summary>
+        public DoorZoomView AlternativeZoomView =>
+            Project.Settings.ZoomView == DoorZoomView.FloorPlan ? DoorZoomView.View3D : DoorZoomView.FloorPlan;
+
+        public string ZoomText => Project.Settings.ZoomView == DoorZoomView.FloorPlan ? "Zoom to door in floor plan" : "Zoom to door in 3D view";
+        public string ZoomAlternativeText => AlternativeZoomView == DoorZoomView.View3D ? "Zoom in 3D view" : "Zoom in floor plan";
+        public bool IsAlternativeZoom3D => AlternativeZoomView == DoorZoomView.View3D;
 
         public void SelectComponents(DoorRowViewModel row)
         {

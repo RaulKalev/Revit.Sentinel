@@ -14,7 +14,7 @@ namespace Sentinel.Revit
     /// <summary>Select / zoom helpers for doors and set components.</summary>
     internal static class NavigationService
     {
-        public static OperationResult Navigate(UIDocument uidoc, NavigationRequest request, Action<BoundingBoxXYZ> focus)
+        public static OperationResult Navigate(UIDocument uidoc, NavigationRequest request, Func<BoundingBoxXYZ, string> focus)
         {
             var doc = uidoc.Document;
             var elements = (request.ElementUniqueIds ?? new List<string>())
@@ -46,8 +46,8 @@ namespace Sentinel.Revit
                         {
                             SentinelLog.Warn("Linked selection failed: " + ex.Message);
                         }
-                        focus(DoorBox(request.Geometry, null) ?? GeometryUtils.TransformBox(GeometryUtils.GetBox(door), link.GetTotalTransform()));
-                        return OperationResult.Ok("Source door selected (linked element).");
+                        var note = focus(DoorBox(request.Geometry, null) ?? GeometryUtils.TransformBox(GeometryUtils.GetBox(door), link.GetTotalTransform()));
+                        return OperationResult.Ok("Source door selected (linked element)." + (note != null ? " " + note : ""));
                     }
 
                 default:
@@ -55,12 +55,12 @@ namespace Sentinel.Revit
                         var box = DoorBox(request.Geometry, null);
                         foreach (var e in elements) box = GeometryUtils.Union(box, GeometryUtils.GetBox(e));
                         if (box == null) return OperationResult.Fail("The door location is unknown.");
-                        focus(box);
+                        var zoomNote = focus(box);
                         if (elements.Count > 0)
                         {
                             try { uidoc.Selection.SetElementIds(elements.Select(e => e.Id).ToList()); } catch { }
                         }
-                        return OperationResult.Ok();
+                        return OperationResult.Ok(zoomNote);
                     }
             }
         }

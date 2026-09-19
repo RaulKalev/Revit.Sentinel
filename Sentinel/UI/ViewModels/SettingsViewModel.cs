@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
 using System.Linq;
@@ -7,9 +8,17 @@ using Sentinel.Core.Library;
 using Sentinel.Core.Models;
 using Sentinel.Core.Persistence;
 using Sentinel.UI.Mvvm;
+using Sentinel.UI.Services;
 
 namespace Sentinel.UI.ViewModels
 {
+    /// <summary>One linked model in the duplicate-door priority list.</summary>
+    public class LinkPriorityItem
+    {
+        public string Name { get; set; }
+        public int Rank { get; set; }
+    }
+
     /// <summary>Project settings, library import/export and data information.</summary>
     public class SettingsViewModel : ObservableObject, IDataErrorInfo
     {
@@ -22,6 +31,8 @@ namespace Sentinel.UI.ViewModels
             ExportCommand = new RelayCommand(Export);
             ImportCommand = new RelayCommand(Import, () => IsEditable);
             AddStarterCommand = new RelayCommand(AddStarterItems, () => IsEditable);
+            MoveLinkUpCommand = new RelayCommand(p => MoveLink(p as LinkPriorityItem, -1), p => IsEditable && (p as LinkPriorityItem)?.Rank > 1);
+            MoveLinkDownCommand = new RelayCommand(p => MoveLink(p as LinkPriorityItem, +1), p => IsEditable && (p as LinkPriorityItem)?.Rank < LinkPriority.Count);
         }
 
         private SentinelProject Project => _main.Session.Project;
@@ -31,6 +42,39 @@ namespace Sentinel.UI.ViewModels
         public RelayCommand ExportCommand { get; }
         public RelayCommand ImportCommand { get; }
         public RelayCommand AddStarterCommand { get; }
+        public RelayCommand MoveLinkUpCommand { get; }
+        public RelayCommand MoveLinkDownCommand { get; }
+
+        /// <summary>Linked models by priority for doors modelled in several links (first = listed).</summary>
+        public ObservableCollection<LinkPriorityItem> LinkPriority { get; } = new ObservableCollection<LinkPriorityItem>();
+        public bool HasLinkPriority => LinkPriority.Count > 1;
+
+        /// <summary>Stored order first, then links of this project that are not in it yet (in the Doors page order).</summary>
+        private void LoadLinkPriority()
+        {
+            var names = new List<string>();
+            foreach (var n in (S.LinkPriority ?? new List<string>())
+                         .Concat(_main.Doors.Links.Select(l => l.Link?.ShortName))
+                         .Concat(_main.Session.DiscoveredDoors.Select(d => LinkInfo.Short(d.Current?.LinkName))))
+                if (!string.IsNullOrWhiteSpace(n) && !names.Contains(n, StringComparer.OrdinalIgnoreCase)) names.Add(n);
+            LinkPriority.Clear();
+            for (var i = 0; i < names.Count; i++) LinkPriority.Add(new LinkPriorityItem { Name = names[i], Rank = i + 1 });
+            OnPropertyChanged(nameof(HasLinkPriority));
+        }
+
+        private void MoveLink(LinkPriorityItem item, int step)
+        {
+            var i = item == null ? -1 : LinkPriority.IndexOf(item);
+            var j = i + step;
+            if (i < 0 || j < 0 || j >= LinkPriority.Count) return;
+            var names = LinkPriority.Select(x => x.Name).ToList();
+            names.RemoveAt(i);
+            names.Insert(j, item.Name);
+            S.LinkPriority = names;
+            Edited();
+            LoadLinkPriority();
+            RelayCommand.Requery();
+        }
 
         public List<Option<HingeSide>> HingeSides => UiChoices.HingeSides;
 
@@ -50,6 +94,19 @@ namespace Sentinel.UI.ViewModels
         {
             get => S.PreviewInActiveView;
             set { if (S.PreviewInActiveView != value) { S.PreviewInActiveView = value; Edited(); OnPropertyChanged(); } }
+        }
+
+        /// <summary>"Zoom to door" opens a floor plan of the door's level (the 3D view stays available as an extra command).</summary>
+        public bool ZoomInFloorPlan
+        {
+            get => S.ZoomView == DoorZoomView.FloorPlan;
+            set { if (value && S.ZoomView != DoorZoomView.FloorPlan) { S.ZoomView = DoorZoomView.FloorPlan; Edited(); OnPropertiesChanged(nameof(ZoomInFloorPlan), nameof(ZoomIn3D)); } }
+        }
+
+        public bool ZoomIn3D
+        {
+            get => S.ZoomView == DoorZoomView.View3D;
+            set { if (value && S.ZoomView != DoorZoomView.View3D) { S.ZoomView = DoorZoomView.View3D; Edited(); OnPropertiesChanged(nameof(ZoomInFloorPlan), nameof(ZoomIn3D)); } }
         }
 
         public string IdentityParameterName
@@ -94,10 +151,15 @@ namespace Sentinel.UI.ViewModels
         public void OnProjectLoaded()
         {
             _texts.Clear();
+            LoadLinkPriority();
             RefreshAll();
         }
 
-        public void OnActivated() => RefreshAll();
+        public void OnActivated()
+        {
+            LoadLinkPriority();
+            RefreshAll();
+        }
 
         private void Edited() => _main.MarkDirty("settings");
 

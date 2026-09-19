@@ -47,6 +47,7 @@ namespace Sentinel.UI.ViewModels
             AddComponentCommand = new RelayCommand(AddComponent, () => CanEditInstance && SelectedAdd != null);
             AcceptSourceCommand = new RelayCommand(AcceptSource, () => CanEditInstance && SourceCheck?.Current != null && SourceCheck.Comparison != null && SourceCheck.Comparison.HasChanges);
             ZoomCommand = new RelayCommand(() => _doors.Zoom(_row), () => _row != null);
+            ZoomAlternativeCommand = new RelayCommand(() => _doors.Zoom(_row, _doors.AlternativeZoomView), () => _row != null);
             SelectComponentsCommand = new RelayCommand(() => _doors.SelectComponents(_row), () => _row != null && _row.HasPlacedElements);
             SelectSourceCommand = new RelayCommand(() => _doors.SelectSourceDoor(_row), () => _row != null);
             PreviewCommand = new RelayCommand(() => _doors.Preview.Start(new List<DoorRowViewModel> { _row }), () => CanPlaceFromInspector && _row.IsAssigned);
@@ -74,6 +75,7 @@ namespace Sentinel.UI.ViewModels
 
         private InspectorComponentViewModel _resumeEdit;
         public bool HasInstance => Instance != null && !string.IsNullOrEmpty(Instance.DefinitionId);
+        public bool IsNoAccessControl => Instance != null && Instance.IsNoAccessControl;
         public string MultiSelectText { get => _multiText; private set => Set(ref _multiText, value); }
         public bool IsEditable => _main.IsEditable;
 
@@ -82,6 +84,12 @@ namespace Sentinel.UI.ViewModels
         public RelayCommand AddComponentCommand { get; }
         public RelayCommand AcceptSourceCommand { get; }
         public RelayCommand ZoomCommand { get; }
+        public RelayCommand ZoomAlternativeCommand { get; }
+
+        // Default zoom view comes from Settings; refreshed with every Load (RefreshAll).
+        public string ZoomText => _doors.ZoomText;
+        public string ZoomAlternativeText => _doors.ZoomAlternativeText;
+        public bool IsAlternativeZoom3D => _doors.IsAlternativeZoom3D;
         public RelayCommand SelectComponentsCommand { get; }
         public RelayCommand SelectSourceCommand { get; }
         public RelayCommand PreviewCommand { get; }
@@ -205,7 +213,7 @@ namespace Sentinel.UI.ViewModels
                     inst.ReviewState == ReviewState.NeedsReview ? "Needs review" : "Not reviewed";
                 foreach (var i in row.Evaluation.Issues.OrderByDescending(x => x.Severity))
                     Issues.Add(new IssueItem { Severity = i.Severity, Message = i.Message });
-                if (!string.IsNullOrEmpty(row.Door?.PossibleDuplicateOf))
+                if (row.ShowsDuplicateHint)
                     Issues.Add(new IssueItem
                     {
                         Severity = IssueSeverity.Info,
@@ -216,6 +224,8 @@ namespace Sentinel.UI.ViewModels
 
                 SetChoices.Add(new SetChoice());
                 foreach (var d in Project.DoorSetDefinitions.OrderBy(d => d.Code, StringComparer.OrdinalIgnoreCase)) SetChoices.Add(new SetChoice { Definition = d });
+                SetChoices.Add(new SetChoice { Definition = NoAccessControlChoice.Definition });
+                if (inst != null && inst.IsNoAccessControl) def = NoAccessControlChoice.Definition;
                 _selectedSet = SetChoices.FirstOrDefault(c => c.Definition != null && c.Definition == def) ?? SetChoices[0];
 
                 var a = SentinelSession.SideName(src, true);
@@ -230,6 +240,7 @@ namespace Sentinel.UI.ViewModels
                 var geometry = _main.Session.GeometryFor(inst) ?? row.Door?.Geometry;
                 var hingeSource = inst?.HingeSideOverride != null ? "per-door override" :
                     plan != null && plan.HingeAssumed ? "assumed – check the preview" :
+                    geometry != null && geometry.HingeFromHandle ? "from the door handle" :
                     geometry?.Source == DoorGeometrySource.FamilyInstance ? "from door family" : "unknown";
                 HingeText = plan != null
                     ? Sentence(DoorSetPlacementCalculator.HingeText(plan.ResolvedHinge)) + "  ·  " + hingeSource
@@ -320,6 +331,18 @@ namespace Sentinel.UI.ViewModels
 
         private void ChangeSet(DoorSetDefinition def)
         {
+            if (NoAccessControlChoice.Is(def))
+            {
+                if (_doors.Preview.IsActive)
+                {
+                    _main.SetStatus("Exit the preview to mark this door as no access control.", true);
+                    Load(_row);
+                    return;
+                }
+                _doors.MarkNoAccessControl(new List<DoorRowViewModel> { _row });
+                Load(_row); // back to the stored state if a confirmation was cancelled
+                return;
+            }
             if (def == null)
             {
                 if (Instance == null) return;

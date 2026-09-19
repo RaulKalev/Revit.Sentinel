@@ -92,7 +92,7 @@ namespace Sentinel.UI.ViewModels
             }
         }
 
-        public string SkipText => HasNext ? "Skip" : "Skip (last)";
+        public string SkipText => "Skip";
 
         /// <summary>Jumps to a queued door (selecting it in the grid). Returns false if it is not part of this review.</summary>
         public bool TryGoTo(string instanceId)
@@ -128,11 +128,24 @@ namespace Sentinel.UI.ViewModels
                 _main.SetStatus("Assign a door set before previewing.", true);
                 return;
             }
-            _queue.Clear();
-            _queue.AddRange(ids);
-            _outcomes.Clear();
-            IsActive = true;
-            Go(0);
+            // Components inside a wall of another model (lining, split walls) are moved out first, so the preview shows
+            // where they will really go.
+            _main.BeginBusy("Checking walls around the doors…");
+            _main.Host.CheckWallClearances(ids, r =>
+            {
+                _main.EndBusy();
+                if (!r.Success) _main.SetStatus(r.Message, true);
+                else if (!string.IsNullOrEmpty(r.Message))
+                {
+                    _main.MarkDirty("wall clearance");
+                    _main.SetStatus(r.Message);
+                }
+                _queue.Clear();
+                _queue.AddRange(ids);
+                _outcomes.Clear();
+                IsActive = true;
+                Go(0);
+            });
         }
 
         public void Exit()
@@ -165,6 +178,14 @@ namespace Sentinel.UI.ViewModels
             if (!_isActive || inst == null || Current == null || inst.Id != Current.Id) return;
             Load();
             Push(false);
+            // A flip or a new component may put something on a wall that was not measured yet.
+            _main.Host.CheckWallClearances(new List<string> { inst.Id }, r =>
+            {
+                if (!r.Success || string.IsNullOrEmpty(r.Message) || !_isActive || Current == null || Current.Id != inst.Id) return;
+                _main.MarkDirty("wall clearance");
+                Load();
+                Push(false);
+            });
         }
 
         private void Load()
@@ -248,7 +269,7 @@ namespace Sentinel.UI.ViewModels
                     IsCurrent = true
                 });
             }
-            _main.Host.ShowPreview(scene, zoom, r => { if (!r.Success) _main.SetStatus(r.Message, true); });
+            _main.Host.ShowPreview(scene, zoom, r => { if (!r.Success || !string.IsNullOrEmpty(r.Message)) _main.SetStatus(r.Message, !r.Success); });
             var row = _doors.FindRow(inst.Id);
             if (row != null) _doors.UpdateRow(row);
         }
@@ -258,8 +279,7 @@ namespace Sentinel.UI.ViewModels
         private void AfterEdit(string reason)
         {
             _main.MarkDirty(reason);
-            Load();
-            Push(false);
+            OnInstanceEdited(Current); // reloads, re-previews and re-checks the walls
         }
 
         private void Flip()

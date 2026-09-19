@@ -24,6 +24,62 @@ namespace Sentinel.Core.Models
         /// often split across models (shell + interior) and some doors are modelled in both.
         /// </summary>
         public string PossibleDuplicateOf { get; set; }
+
+        /// <summary>The nearest door of another link in the same opening (see <see cref="PossibleDuplicateOf"/>).</summary>
+        public DiscoveredDoor DuplicatePartner { get; set; }
+
+        /// <summary>
+        /// Set when this door is the duplicate that is left out: its partner comes from a model with a higher priority
+        /// (<see cref="SentinelSettings.LinkPriority"/>). The door is listed as Ignored unless it already has a set.
+        /// </summary>
+        public DiscoveredDoor PreferredDuplicate { get; set; }
+    }
+
+    /// <summary>Decides which door of a cross-link duplicate pair is kept.</summary>
+    public static class DuplicatePriority
+    {
+        /// <summary>
+        /// Rank of each link: first the models named in <paramref name="priority"/> (link names such as "AR.ifc", in
+        /// order), then the other links in the order their doors were found. Lower wins.
+        /// </summary>
+        public static Func<SourceDoorReference, int> Ranking(IList<string> priority, IList<DiscoveredDoor> doors)
+        {
+            var names = (priority ?? new List<string>()).Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
+            var order = (doors ?? new List<DiscoveredDoor>()).Where(d => d?.Current != null)
+                .Select(d => d.Current.LinkInstanceUniqueId ?? "").Distinct().ToList();
+            return src =>
+            {
+                var name = CrossLinkDuplicates.ShortLinkName(src?.LinkName);
+                var i = names.FindIndex(n => string.Equals(n, name, StringComparison.OrdinalIgnoreCase));
+                if (i >= 0) return i;
+                var j = order.IndexOf(src?.LinkInstanceUniqueId ?? "");
+                return names.Count + (j >= 0 ? j : order.Count);
+            };
+        }
+
+        /// <summary>Sets <see cref="DiscoveredDoor.PreferredDuplicate"/> on the left-out door of every pair; returns how many.</summary>
+        public static int Apply(IList<DiscoveredDoor> doors, IList<string> priority)
+        {
+            if (doors == null) return 0;
+            var rank = Ranking(priority, doors);
+            var n = 0;
+            foreach (var d in doors)
+            {
+                if (d == null) continue;
+                d.PreferredDuplicate = null;
+                var p = d.DuplicatePartner;
+                if (p?.Current == null || d.Current == null) continue;
+                if (rank(p.Current) < rank(d.Current))
+                {
+                    d.PreferredDuplicate = p;
+                    n++;
+                }
+            }
+            // A partner that is itself left out (chain across three models) cannot keep another door out.
+            var chained = doors.Where(d => d?.PreferredDuplicate?.PreferredDuplicate != null).ToList();
+            foreach (var d in chained) d.PreferredDuplicate = null;
+            return n - chained.Count;
+        }
     }
 
     /// <summary>Finds doors from different links that occupy the same opening.</summary>
@@ -79,13 +135,14 @@ namespace Sentinel.Core.Models
                 }
                 if (best == null) continue;
                 d.PossibleDuplicateOf = best.Current.DisplayName + " in " + ShortLinkName(best.Current.LinkName);
+                d.DuplicatePartner = best;
                 marked++;
             }
             return marked;
         }
 
         /// <summary>"SA.ifc : 12" → "SA.ifc" (Revit appends the link instance number).</summary>
-        private static string ShortLinkName(string name)
+        public static string ShortLinkName(string name)
         {
             if (string.IsNullOrWhiteSpace(name)) return "another link";
             var i = name.LastIndexOf(" : ", StringComparison.Ordinal);

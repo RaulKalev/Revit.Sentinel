@@ -79,26 +79,12 @@
                         Visibility="{Binding IsActive, Converter={StaticResource BoolToVis}}">
                         <DockPanel>
                             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                                <Button
-                                    AutomationProperties.Name="Previous door"
-                                    Command="{Binding PreviousCommand}"
-                                    Style="{StaticResource Button.Icon}"
-                                    ToolTip="Previous door (Alt+Left)">
-                                    <materialDesign:PackIcon
-                                        Width="18"
-                                        Height="18"
-                                        Kind="ChevronLeft" />
-                                </Button>
-                                <Button
-                                    AutomationProperties.Name="Next door"
-                                    Command="{Binding NextCommand}"
-                                    Style="{StaticResource Button.Icon}"
-                                    ToolTip="Next door without placing (Alt+Right)">
-                                    <materialDesign:PackIcon
-                                        Width="18"
-                                        Height="18"
-                                        Kind="ChevronRight" />
-                                </Button>
+                                <CheckBox
+                                    VerticalAlignment="Center"
+                                    Content="Auto zoom"
+                                    IsChecked="{Binding AutoZoom}"
+                                    Style="{StaticResource Input.Check}"
+                                    ToolTip="Zoom the Revit view to each door as the review moves on" />
                                 <Button
                                     Margin="6,0,0,0"
                                     Command="{Binding ExitCommand}"
@@ -136,14 +122,33 @@
                             DockPanel.Dock="Right"
                             Orientation="Horizontal">
                             <Button
-                                AutomationProperties.Name="Zoom to door"
+                                AutomationProperties.Name="{Binding ZoomText}"
                                 Command="{Binding ZoomCommand}"
                                 Style="{StaticResource Button.Icon}"
-                                ToolTip="Zoom to the door in Revit (or double-click the row)">
+                                ToolTip="{Binding ZoomText}">
                                 <materialDesign:PackIcon
                                     Width="17"
                                     Height="17"
                                     Kind="MagnifyScan" />
+                            </Button>
+                            <!--  The other view (3D when plans are the default, and the other way round)  -->
+                            <Button
+                                AutomationProperties.Name="{Binding ZoomAlternativeText}"
+                                Command="{Binding ZoomAlternativeCommand}"
+                                Style="{StaticResource Button.Icon}"
+                                ToolTip="{Binding ZoomAlternativeText}">
+                                <materialDesign:PackIcon Width="17" Height="17">
+                                    <materialDesign:PackIcon.Style>
+                                        <Style TargetType="{x:Type materialDesign:PackIcon}">
+                                            <Setter Property="Kind" Value="FloorPlan" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsAlternativeZoom3D}" Value="True">
+                                                    <Setter Property="Kind" Value="CubeOutline" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </materialDesign:PackIcon.Style>
+                                </materialDesign:PackIcon>
                             </Button>
                             <Button
                                 x:Name="DoorMoreButton"
@@ -157,6 +162,7 @@
                                     Kind="DotsHorizontal" />
                                 <Button.ContextMenu>
                                     <ContextMenu x:Name="DoorMoreMenu">
+                                        <MenuItem Command="{Binding ZoomAlternativeCommand}" Header="{Binding ZoomAlternativeText}" />
                                         <MenuItem Command="{Binding MarkReviewedCommand}" Header="Mark as reviewed">
                                             <MenuItem.Icon>
                                                 <materialDesign:PackIcon Kind="CheckDecagramOutline" />
@@ -294,12 +300,28 @@
                     DockPanel.Dock="Bottom"
                     Visibility="{Binding IsActive, Converter={StaticResource BoolToVis}}">
                     <DockPanel>
-                        <CheckBox
-                            VerticalAlignment="Center"
-                            Content="Auto zoom"
-                            IsChecked="{Binding AutoZoom}"
-                            Style="{StaticResource Input.Check}"
-                            ToolTip="Zoom the Revit view to each door as the review moves on" />
+                        <StackPanel VerticalAlignment="Center" Orientation="Horizontal">
+                            <Button
+                                AutomationProperties.Name="Previous door"
+                                Command="{Binding PreviousCommand}"
+                                Style="{StaticResource Button.Icon}"
+                                ToolTip="Previous door (Alt+Left)">
+                                <materialDesign:PackIcon
+                                    Width="18"
+                                    Height="18"
+                                    Kind="ChevronLeft" />
+                            </Button>
+                            <Button
+                                AutomationProperties.Name="Next door"
+                                Command="{Binding NextCommand}"
+                                Style="{StaticResource Button.Icon}"
+                                ToolTip="Next door without placing (Alt+Right)">
+                                <materialDesign:PackIcon
+                                    Width="18"
+                                    Height="18"
+                                    Kind="ChevronRight" />
+                            </Button>
+                        </StackPanel>
                         <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
                             <Button
                                 Margin="0,0,8,0"
@@ -336,54 +358,46 @@
                             SelectedItem="{Binding SelectedSet}"
                             Style="{StaticResource Input.Combo}"
                             ToolTip="Door set for this door (changes update the preview immediately)" />
+                        <TextBlock
+                            Margin="0,0,0,8"
+                            Style="{StaticResource Type.Secondary}"
+                            Text="Decided: this door needs no access control, so nothing is placed. Choose a door set to change it."
+                            TextWrapping="Wrap"
+                            Visibility="{Binding IsNoAccessControl, Converter={StaticResource BoolToVis}}" />
 
                         <StackPanel Visibility="{Binding HasInstance, Converter={StaticResource BoolToVis}}">
-                            <DockPanel Margin="0,0,0,8">
+                            <ComboBox
+                                Margin="0,0,0,8"
+                                AutomationProperties.Name="Access direction"
+                                DisplayMemberPath="Text"
+                                IsEnabled="{Binding IsEditable}"
+                                ItemsSource="{Binding DirectionChoices}"
+                                SelectedItem="{Binding SelectedDirection}"
+                                Style="{StaticResource Input.Combo}"
+                                ToolTip="Controlled access direction: from the unsecured side into the secured side" />
+                            <!--  Door corrections: same weight as the review buttons  -->
+                            <UniformGrid Margin="0,0,0,4" Columns="2">
                                 <Button
-                                    Width="32"
-                                    Height="32"
-                                    Margin="6,0,0,0"
-                                    AutomationProperties.Name="Flip access direction"
+                                    Margin="0,0,4,0"
                                     Command="{Binding FlipCommand}"
-                                    DockPanel.Dock="Right"
-                                    Style="{StaticResource Button.Icon}"
+                                    Style="{StaticResource Button.Secondary}"
                                     ToolTip="Flip: swap the secured and unsecured sides">
-                                    <materialDesign:PackIcon
-                                        Width="18"
-                                        Height="18"
-                                        Kind="SwapHorizontal" />
+                                    <StackPanel Orientation="Horizontal">
+                                        <materialDesign:PackIcon Kind="SwapHorizontal" Style="{StaticResource ButtonIconLabel}" />
+                                        <TextBlock Text="Flip sides" />
+                                    </StackPanel>
                                 </Button>
-                                <ComboBox
-                                    AutomationProperties.Name="Access direction"
-                                    DisplayMemberPath="Text"
-                                    IsEnabled="{Binding IsEditable}"
-                                    ItemsSource="{Binding DirectionChoices}"
-                                    SelectedItem="{Binding SelectedDirection}"
-                                    Style="{StaticResource Input.Combo}"
-                                    ToolTip="Controlled access direction: from the unsecured side into the secured side" />
-                            </DockPanel>
-                            <DockPanel Margin="0,0,0,4">
                                 <Button
-                                    Margin="6,0,0,0"
+                                    Margin="4,0,0,0"
                                     Command="{Binding SwapHingeCommand}"
-                                    Content="Swap hinge"
-                                    DockPanel.Dock="Right"
-                                    Style="{StaticResource Button.Plain}"
-                                    ToolTip="Use the other jamb as the hinge side for this door" />
-                                <materialDesign:PackIcon
-                                    Width="15"
-                                    Height="15"
-                                    Margin="0,0,8,0"
-                                    VerticalAlignment="Center"
-                                    Foreground="{DynamicResource Text.Tertiary}"
-                                    Kind="DoorOpen" />
-                                <TextBlock
-                                    VerticalAlignment="Center"
-                                    FontSize="{StaticResource FontSize.Secondary}"
-                                    Foreground="{DynamicResource Text.Secondary}"
-                                    Text="{Binding HingeText}"
-                                    TextWrapping="Wrap" />
-                            </DockPanel>
+                                    Style="{StaticResource Button.Secondary}"
+                                    ToolTip="{Binding HingeText}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <materialDesign:PackIcon Kind="DoorOpen" Style="{StaticResource ButtonIconLabel}" />
+                                        <TextBlock Text="Swap hinge" />
+                                    </StackPanel>
+                                </Button>
+                            </UniformGrid>
 
                             <!--  Components  -->
                             <DockPanel Margin="0,18,0,8">

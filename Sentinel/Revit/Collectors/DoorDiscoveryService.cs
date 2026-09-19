@@ -141,11 +141,12 @@ namespace Sentinel.Revit.Collectors
 
             if (failed > 0) result.Warnings.Add(failed + " door(s) could not be read (see log).");
             if (result.SkippedWindowTypes > 0) result.Warnings.Add(result.SkippedWindowTypes + " window type(s) in the Doors category were left out.");
-            if (result.PossibleDuplicates > 0) result.Warnings.Add(result.PossibleDuplicates + " door(s) appear in more than one link.");
             var noGeometry = result.Doors.Count(x => x.Geometry == null || !x.Geometry.IsValid);
             if (noGeometry > 0) result.Warnings.Add(noGeometry + " door(s) have unsupported geometry.");
             var estimated = result.Doors.Count(x => x.Geometry != null && x.Geometry.Source == DoorGeometrySource.EstimatedFromGeometry);
-            if (estimated > 0) result.Warnings.Add(estimated + " door(s) use estimated IFC geometry (hinge side unknown).");
+            var fromHandle = result.Doors.Count(x => x.Geometry != null && x.Geometry.HingeFromHandle);
+            if (fromHandle > 0) result.Warnings.Add(fromHandle + " IFC door(s): hinge side read from the door handle.");
+            if (estimated - fromHandle > 0) result.Warnings.Add((estimated - fromHandle) + " IFC door(s): hinge side unknown, assumed (check the preview).");
 
             result.Success = true;
             return result;

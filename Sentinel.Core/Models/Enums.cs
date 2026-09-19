@@ -53,6 +53,16 @@ namespace Sentinel.Core.Models
         BuiltIntoOtherComponent
     }
 
+    /// <summary>Which view "Zoom to door" (and the preview's auto-zoom) opens.</summary>
+    public enum DoorZoomView
+    {
+        /// <summary>3D view with a section box around the door (the "Sentinel Focus" view or the active 3D view).</summary>
+        View3D,
+
+        /// <summary>A floor plan of the door's level.</summary>
+        FloorPlan
+    }
+
     /// <summary>How a component is created in Revit.</summary>
     public enum HostBehavior
     {
@@ -154,7 +164,9 @@ namespace Sentinel.Core.Models
         SourceChanged,
         Orphaned,
         Error,
-        Ignored
+        Ignored,
+        /// <summary>Marked as needing no access control: a decision, nothing to place.</summary>
+        NoAccessControl
     }
 
     public enum IssueSeverity

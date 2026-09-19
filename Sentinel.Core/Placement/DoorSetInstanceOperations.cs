@@ -33,6 +33,7 @@ namespace Sentinel.Core.Placement
             var changed = inst.DefinitionId != definition?.Id;
             inst.DefinitionId = definition?.Id;
             inst.IsIgnored = false;
+            inst.NoAccessControl = false;
             if (changed)
             {
                 var ov = inst.Overrides ?? (inst.Overrides = new SetOverrides());
@@ -42,6 +43,27 @@ namespace Sentinel.Core.Placement
                 ov.RuleOverrides.RemoveAll(o => !templateIds.Contains(o.RuleId) && !addedIds.Contains(o.RuleId));
                 if (!inst.HasPlacedElements && definition != null)
                     inst.AccessDirection = definition.DefaultAccessDirection;
+            }
+            inst.Touch();
+        }
+
+        /// <summary>
+        /// Marks the door as needing no access control: drops the set type and its door-specific overrides. Placed
+        /// components must be deleted by the caller first (their records are kept until then, so nothing is lost).
+        /// </summary>
+        public static void MarkNoAccessControl(DoorSetInstance inst)
+        {
+            if (inst == null) return;
+            inst.DefinitionId = null;
+            inst.IsIgnored = false;
+            inst.IgnoreReason = null;
+            inst.NoAccessControl = true;
+            inst.LastError = null;
+            if (!inst.HasPlacedElements)
+            {
+                inst.Overrides = new SetOverrides();
+                inst.Components.Clear();
+                inst.PlacedConfigurationHash = null;
             }
             inst.Touch();
         }

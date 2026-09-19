@@ -25,6 +25,8 @@ namespace Sentinel.Core.Models
         public const string ParameterNotWritten = "ParameterNotWritten";
         public const string BuiltInFallback = "BuiltInFallback";
         public const string BuiltInUnavailable = "BuiltInUnavailable";
+        public const string NoAccessControlHasComponents = "NoAccessControlHasComponents";
+        public const string DuplicateLeftOut = "DuplicateLeftOut";
     }
 
     public class StatusIssue

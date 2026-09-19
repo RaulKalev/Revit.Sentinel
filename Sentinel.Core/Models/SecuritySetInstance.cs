@@ -32,6 +32,15 @@ namespace Sentinel.Core.Models
         public bool IsIgnored { get; set; }
         public string IgnoreReason { get; set; }
 
+        /// <summary>
+        /// Decided: this source gets no access control (no set, nothing placed). Unlike <see cref="IsIgnored"/>
+        /// ("not relevant, skip it") this is a design decision and counts as done.
+        /// </summary>
+        public bool NoAccessControl { get; set; }
+
+        [JsonIgnore]
+        public bool IsNoAccessControl => NoAccessControl && !IsIgnored && string.IsNullOrEmpty(DefinitionId);
+
         public ReviewState ReviewState { get; set; } = ReviewState.NotReviewed;
         public string ReviewedBy { get; set; }
         public string ReviewedUtc { get; set; }
@@ -62,12 +71,20 @@ namespace Sentinel.Core.Models
         /// <summary>Per-door hinge side correction (null = use the source geometry / settings).</summary>
         public HingeSide? HingeSideOverride { get; set; }
 
+        /// <summary>
+        /// How far (mm) a wall-side component is pushed out from the door's wall face because wall material is in the
+        /// way there (e.g. a lining modelled in another link). Measured in Revit before preview/placement, keyed by
+        /// slot. Part of the calculated plan, so preview, placement and status agree.
+        /// </summary>
+        public Dictionary<string, double> WallClearances { get; set; } = new Dictionary<string, double>();
+
         public DoorSetInstance Clone()
         {
             var c = (DoorSetInstance)MemberwiseClone();
             c.Source = Source != null ? Source.Clone() : new SourceDoorReference();
             c.Overrides = Overrides != null ? Overrides.Clone() : new SetOverrides();
             c.Components = (Components ?? new List<PlacedComponentInstance>()).Select(x => x.Clone()).ToList();
+            c.WallClearances = new Dictionary<string, double>(WallClearances ?? new Dictionary<string, double>());
             return c;
         }
     }

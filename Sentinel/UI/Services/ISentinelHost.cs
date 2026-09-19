@@ -51,6 +51,12 @@ namespace Sentinel.UI.Services
         /// <summary>Verifies sources, checks placed components and rebuilds relationships from element tags.</summary>
         void Refresh(Action<RefreshResult> done);
 
+        /// <summary>
+        /// Measures wall material in front of the wall-side components of the given sets (all loaded models) and stores
+        /// the push-outs on the instances. Message: what moved (null when nothing changed).
+        /// </summary>
+        void CheckWallClearances(IList<string> instanceIds, Action<OperationResult> done);
+
         void ShowPreview(PreviewScene scene, bool zoom, Action<OperationResult> done);
         void ClearPreview();
 
@@ -240,6 +246,9 @@ namespace Sentinel.UI.Services
         public SourceDoorReference Source { get; set; }
         public DoorGeometry Geometry { get; set; }
         public List<string> ElementUniqueIds { get; set; } = new List<string>();
+
+        /// <summary>View to zoom in; null = the project setting.</summary>
+        public DoorZoomView? View { get; set; }
     }
 
     public class FamilyTypeInfo

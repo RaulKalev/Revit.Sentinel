@@ -73,6 +73,17 @@ namespace Sentinel.Core.Tests
         }
 
         [Fact]
+        public void Settings_ZoomViewDefaultsTo3D_AndSurvivesSaveAndLoad()
+        {
+            var p = TestData.ProjectWithMappedFamilies();
+            Assert.Equal(DoorZoomView.View3D, p.Settings.ZoomView);
+            p.Settings.ZoomView = DoorZoomView.FloorPlan;
+            var back = Sentinel.Core.Persistence.SentinelProjectSerializer.FromPayload(
+                Sentinel.Core.Persistence.SentinelProjectSerializer.ToPayload(p, "test", "1.0")).Project;
+            Assert.Equal(DoorZoomView.FloorPlan, back.Settings.ZoomView);
+        }
+
+        [Fact]
         public void Settings_MultiLinkSurvivesSaveAndLoad()
         {
             var p = TestData.ProjectWithMappedFamilies();

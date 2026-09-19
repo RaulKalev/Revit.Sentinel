@@ -79,4 +79,21 @@ namespace Sentinel.Core.Models
             return c;
         }
     }
+
+    /// <summary>
+    /// "No access control" offered next to the real set types (assign picker, inspector, assignment rules). It is
+    /// never stored in <see cref="SentinelProject.DoorSetDefinitions"/> or on an instance: choosing it marks the
+    /// instance with <see cref="SecuritySetInstance.NoAccessControl"/>. Rules store its reserved <see cref="Id"/>.
+    /// </summary>
+    public static class NoAccessControlChoice
+    {
+        public const string Id = "no-access-control";
+        public const string Name = "No access control";
+
+        /// <summary>Pseudo set type for pickers (read only: do not edit or add it to the project).</summary>
+        public static readonly DoorSetDefinition Definition = new DoorSetDefinition { Id = Id, Name = Name, Revision = 0 };
+
+        public static bool Is(string definitionId) => definitionId == Id;
+        public static bool Is(DoorSetDefinition definition) => definition != null && definition.Id == Id;
+    }
 }

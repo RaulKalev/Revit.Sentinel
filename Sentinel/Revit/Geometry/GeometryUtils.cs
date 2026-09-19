@@ -57,6 +57,51 @@ namespace Sentinel.Revit.Geometry
             }
         }
 
+        /// <summary>
+        /// Vertices grouped per solid / mesh (IFC doors keep leaf, lining and handles as separate pieces), link
+        /// document coordinates.
+        /// </summary>
+        public static List<List<XYZ>> GetPointGroups(Element e)
+        {
+            var groups = new List<List<XYZ>>();
+            if (e == null) return groups;
+            GeometryElement geo = null;
+            try { geo = e.get_Geometry(new Options { ComputeReferences = false, DetailLevel = ViewDetailLevel.Fine }); }
+            catch { }
+            if (geo != null) CollectGroups(geo, groups);
+            return groups;
+        }
+
+        private static void CollectGroups(GeometryElement geo, List<List<XYZ>> groups)
+        {
+            foreach (var obj in geo)
+            {
+                var s = obj as Solid;
+                if (s != null && s.Volume > 1e-9)
+                {
+                    var pts = new List<XYZ>();
+                    AddSolidPoints(s, pts);
+                    if (pts.Count > 0) groups.Add(pts);
+                    continue;
+                }
+                var m = obj as Mesh;
+                if (m != null)
+                {
+                    var pts = new List<XYZ>(m.Vertices.Count);
+                    for (int i = 0; i < m.Vertices.Count; i++) pts.Add(m.Vertices[i]);
+                    if (pts.Count > 0) groups.Add(pts);
+                    continue;
+                }
+                var gi = obj as GeometryInstance;
+                if (gi != null)
+                {
+                    GeometryElement inst = null;
+                    try { inst = gi.GetInstanceGeometry(); } catch { }
+                    if (inst != null) CollectGroups(inst, groups);
+                }
+            }
+        }
+
         /// <summary>Vertices of all solids/meshes of an element (for footprint estimation).</summary>
         public static List<XYZ> GetPoints(Element e)
         {

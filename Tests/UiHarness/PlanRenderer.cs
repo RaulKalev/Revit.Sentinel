@@ -70,7 +70,7 @@ namespace Sentinel.UiHarness
                     Arrow(dc, green, P(g.Origin + from * 1100), P(g.Origin - from * 1100));
                 }
 
-                foreach (var p in d.Placements)
+                foreach (var p in d.Placements.Where(x => !x.IsBuiltIn))
                 {
                     var c = p.HasErrors ? Brushes.IndianRed : ColorFor(p.Category);
                     var pt = P(p.Position);

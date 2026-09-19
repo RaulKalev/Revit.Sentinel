@@ -22,6 +22,9 @@ namespace Sentinel.Core.Geometry
         public double HeightMm { get; set; }
         public double WallThicknessMm { get; set; }
         public HingeSide Hinge { get; set; } = HingeSide.Unknown;
+
+        /// <summary>The hinge side was read from the door handle in the geometry (IFC doors without orientation data).</summary>
+        public bool HingeFromHandle { get; set; }
         public DoorGeometrySource Source { get; set; } = DoorGeometrySource.FamilyInstance;
 
         /// <summary>Plan rotation of the door (angle of the side A normal), degrees.</summary>

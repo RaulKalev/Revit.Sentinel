@@ -36,9 +36,12 @@
 		<DefineConstants>$(DefineConstants);REVIT2026</DefineConstants>
 	</PropertyGroup>
 
+	<!-- Ribbon icons, loaded by pack URI: "Dark" is the light-coloured icon for Revit's dark theme. -->
 	<ItemGroup>
-		<Resource Include="Resources\Sentinel32.png" />
-		<Resource Include="Resources\Sentinel16.png" />
+		<EmbeddedResource Remove="Assets\Dark - Sentinel.tiff" />
+		<EmbeddedResource Remove="Assets\Light - Sentinel.tiff" />
+		<Resource Include="Assets\Dark - Sentinel.tiff" />
+		<Resource Include="Assets\Light - Sentinel.tiff" />
 	</ItemGroup>
 
 	<ItemGroup>
@@ -69,8 +72,14 @@
 		<PackageReference Include="Nice3point.Revit.Api.AdWindows" Version="2026.4.0" ExcludeAssets="runtime" />
 	</ItemGroup>
 
+	<!--
+	  Sentinel.Core is compiled into Sentinel.dll instead of shipping as a second assembly. With ricaun AppLoader
+	  hot reload, a Core assembly loaded by an earlier reload (served by that reload's Costura resolver) would be
+	  reused by the new Sentinel.dll and fail with MissingMethodException. One assembly always reloads as a whole.
+	  The Sentinel.Core project still exists on its own for the Revit-free unit tests.
+	-->
 	<ItemGroup>
-		<ProjectReference Include="..\Sentinel.Core\Sentinel.Core.csproj" />
+		<Compile Include="..\Sentinel.Core\**\*.cs" Exclude="..\Sentinel.Core\bin\**;..\Sentinel.Core\obj\**" Link="Core\%(RecursiveDir)%(Filename)%(Extension)" />
 	</ItemGroup>
 
 	<ItemGroup>

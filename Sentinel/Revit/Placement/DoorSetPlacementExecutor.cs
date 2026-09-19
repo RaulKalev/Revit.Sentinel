@@ -51,6 +51,12 @@ namespace Sentinel.Revit.Placement
                 result.Messages.Add("Door is marked as ignored.");
                 return result;
             }
+            if (inst.IsNoAccessControl)
+            {
+                result.Outcome = PlacementOutcome.Skipped;
+                result.Messages.Add("Door is marked as no access control.");
+                return result;
+            }
 
             var def = project.FindDoorSet(inst.DefinitionId);
             if (def == null)
