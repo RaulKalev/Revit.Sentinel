@@ -98,6 +98,28 @@ namespace Sentinel.UI.ViewModels
             }
         }
 
+        /// <summary>
+        /// One-line rule summary for collapsed rows, e.g. "Latch jamb +150 mm · Unsecured side · 1000 mm from bottom".
+        /// <paramref name="defaultHeight"/> is shown when the rule leaves the height to the component.
+        /// </summary>
+        public static string RuleSummary(PlacementRule rule, double? defaultHeight)
+        {
+            if (rule == null) return "";
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            var reference = rule.Reference == PlacementReference.LatchJamb ? "Latch jamb" :
+                            rule.Reference == PlacementReference.HingeJamb ? "Hinge jamb" : "Door centre";
+            if (Math.Abs(rule.AlongWallOffsetMm) > 0.01)
+                reference += (rule.AlongWallOffsetMm > 0 ? " +" : " ") + rule.AlongWallOffsetMm.ToString("0", inv) + " mm";
+
+            var side = Text(Sides, rule.Side);
+            var h = rule.MountingHeightMm ?? defaultHeight;
+            var height = h.HasValue
+                ? h.Value.ToString("0", inv) + " mm " + (rule.HeightReference == HeightReference.DoorTop ? "above head" : "from bottom") +
+                  (rule.MountingHeightMm.HasValue ? "" : " (default)")
+                : "default height";
+            return reference + " · " + side + " · " + height;
+        }
+
         public static string Text<T>(IEnumerable<Option<T>> options, T value)
         {
             var o = options.FirstOrDefault(x => EqualityComparer<T>.Default.Equals(x.Value, value));

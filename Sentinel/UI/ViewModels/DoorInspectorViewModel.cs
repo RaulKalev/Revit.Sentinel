@@ -49,19 +49,30 @@ namespace Sentinel.UI.ViewModels
             ZoomCommand = new RelayCommand(() => _doors.Zoom(_row), () => _row != null);
             SelectComponentsCommand = new RelayCommand(() => _doors.SelectComponents(_row), () => _row != null && _row.HasPlacedElements);
             SelectSourceCommand = new RelayCommand(() => _doors.SelectSourceDoor(_row), () => _row != null);
-            PreviewCommand = new RelayCommand(() => _doors.Preview.Start(new List<DoorRowViewModel> { _row }), () => CanEditInstance && _row.IsAssigned);
-            PlaceCommand = new RelayCommand(Place, () => CanEditInstance && _row.IsAssigned && !_row.HasPlacedElements);
-            UpdateCommand = new RelayCommand(() => _doors.UpdatePlacement(new[] { _row }, true), () => CanEditInstance && _row.IsAssigned && _row.HasPlacedElements);
-            DeleteComponentsCommand = new RelayCommand(DeleteComponents, () => CanEditInstance && _row.HasPlacedElements);
+            PreviewCommand = new RelayCommand(() => _doors.Preview.Start(new List<DoorRowViewModel> { _row }), () => CanPlaceFromInspector && _row.IsAssigned);
+            PlaceCommand = new RelayCommand(Place, () => CanPlaceFromInspector && _row.IsAssigned && !_row.HasPlacedElements);
+            UpdateCommand = new RelayCommand(() => _doors.UpdatePlacement(new[] { _row }, true), () => CanPlaceFromInspector && _row.IsAssigned && _row.HasPlacedElements);
+            DeleteComponentsCommand = new RelayCommand(DeleteComponents, () => CanPlaceFromInspector && _row.HasPlacedElements);
             MarkReviewedCommand = new RelayCommand(MarkReviewed, () => CanEditInstance && _row.IsAssigned && Instance.ReviewState != ReviewState.Reviewed);
         }
 
         private SentinelProject Project => _main.Session.Project;
         public DoorSetInstance Instance => _row?.Instance;
-        private bool CanEditInstance => _main.IsEditable && !_main.IsBusy && Instance != null && !_doors.Preview.IsActive;
+        // Adjustments (set, direction, hinge, components) are allowed while previewing – they update the preview.
+        private bool CanEditInstance => _main.IsEditable && !_main.IsBusy && Instance != null;
+        // Placement commands belong to the preview footer while a preview runs.
+        private bool CanPlaceFromInspector => CanEditInstance && !_doors.Preview.IsActive;
         private SourceCheck SourceCheck => _main.Session.Check(Instance);
 
         public bool HasRow => _row != null;
+
+        /// <summary>Key of the door shown (the view scrolls to the top only when this changes).</summary>
+        public string CurrentKey => _row?.Key;
+
+        /// <summary>True for Ready/Error sets that are not placed yet (drives the footer labels).</summary>
+        public bool IsPlaced => _row != null && _row.HasPlacedElements;
+
+        private InspectorComponentViewModel _resumeEdit;
         public bool HasInstance => Instance != null && !string.IsNullOrEmpty(Instance.DefinitionId);
         public string MultiSelectText { get => _multiText; private set => Set(ref _multiText, value); }
         public bool IsEditable => _main.IsEditable;
@@ -161,9 +172,11 @@ namespace Sentinel.UI.ViewModels
             try
             {
                 if (_row != row) _editingRuleId = null;
+                // Keep an open, unapplied edit across refreshes of the same door.
+                _resumeEdit = _row == row ? Components.FirstOrDefault(c => c.IsEditing && c.RuleId == _editingRuleId) : null;
                 _row = row;
                 MultiSelectText = row == null
-                    ? (selectionCount > 1 ? selectionCount + " doors selected – use the toolbar to assign, preview or place them together." : "Select a door to see its details.")
+                    ? (selectionCount > 1 ? selectionCount + " doors selected. The actions below apply to all of them." : "Select a door to see its details.")
                     : null;
 
                 Issues.Clear();
@@ -184,7 +197,7 @@ namespace Sentinel.UI.ViewModels
 
                 Title = row.Mark;
                 Subtitle = string.Join(" • ", new[] { src?.TypeName, src?.LevelName }.Where(s => !string.IsNullOrWhiteSpace(s)));
-                RoomsText = "Side A: " + SentinelSession.SideName(src, true) + "     Side B: " + SentinelSession.SideName(src, false);
+                RoomsText = SentinelSession.SideName(src, true) + "  ·  " + SentinelSession.SideName(src, false);
                 Status = row.Status;
                 StatusText = row.StatusText;
                 ReviewText = inst == null || string.IsNullOrEmpty(inst.DefinitionId) ? "" :
@@ -256,7 +269,11 @@ namespace Sentinel.UI.ViewModels
                 var slots = plan?.Placements.Where(p => p.RuleId == e.RuleId).ToList() ?? new List<CalculatedPlacement>();
                 var records = inst.Components.Where(c => c.SlotKey == e.RuleId || c.SlotKey == e.RuleId + DoorSetPlacementCalculator.MirrorSuffix).ToList();
                 var vm = new InspectorComponentViewModel(this, e, slots, records, removed: false);
-                if (vm.RuleId == _editingRuleId) vm.BeginEdit();
+                if (vm.RuleId == _editingRuleId)
+                {
+                    if (_resumeEdit != null && _resumeEdit.RuleId == vm.RuleId) vm.ResumeEdit(_resumeEdit);
+                    else vm.BeginEdit();
+                }
                 Components.Add(vm);
             }
 
@@ -287,6 +304,7 @@ namespace Sentinel.UI.ViewModels
         {
             _main.MarkDirty(reason);
             _doors.UpdateRow(_row);
+            if (_doors.SelectedRow != _row) Load(_row); // multi-selection / preview: UpdateRow did not reload the panel
             _doors.Preview.OnInstanceEdited(Instance);
         }
 
@@ -297,6 +315,12 @@ namespace Sentinel.UI.ViewModels
             if (def == null)
             {
                 if (Instance == null) return;
+                if (_doors.Preview.IsActive)
+                {
+                    _main.SetStatus("Exit the preview to remove the set from this door.", true);
+                    Load(_row);
+                    return;
+                }
                 if (Instance.HasPlacedElements)
                 {
                     _main.SetStatus("This set has placed components – use 'Remove set' in the toolbar to remove it and delete the components.", true);
@@ -364,18 +388,23 @@ namespace Sentinel.UI.ViewModels
 
         private void DeleteComponents()
         {
-            var n = Instance.Components.Count(c => !string.IsNullOrEmpty(c.ElementUniqueId));
-            if (!_main.Dialogs.Confirm("Delete placed components",
-                    "Delete the " + n + " placed component(s) of " + _row.Mark + "? The set assignment and its overrides are kept, so it can be placed again.",
-                    null, "Delete", "Cancel")) return;
-            _main.CancelPendingSave();
-            _main.BeginBusy("Deleting components…");
-            _main.Host.DeletePlacedComponents(new List<string> { Instance.Id }, false, r =>
-            {
-                _main.EndBusy();
-                _main.SetStatus(r.Message, !r.Success);
-                _doors.UpdateRows();
-            });
+            var inst = Instance;
+            var mark = _row.Mark;
+            var n = inst.Components.Count(c => !string.IsNullOrEmpty(c.ElementUniqueId));
+            _main.Dialogs.Confirm("Delete placed components",
+                "Delete the " + n + " placed component(s) of " + mark + "? The set assignment and its overrides are kept, so it can be placed again.",
+                null, "Delete " + n + " element(s)", "Cancel", ok =>
+                {
+                    if (!ok) return;
+                    _main.CancelPendingSave();
+                    _main.BeginBusy("Deleting components…");
+                    _main.Host.DeletePlacedComponents(new List<string> { inst.Id }, false, r =>
+                    {
+                        _main.EndBusy();
+                        _main.SetStatus(r.Message, !r.Success);
+                        _doors.UpdateRows();
+                    });
+                });
         }
 
         private void MarkReviewed()

@@ -23,6 +23,9 @@ namespace Sentinel.UI.ViewModels
             _loading = false;
             Editor.Edited += (s, e) =>
             {
+                // A row with an invalid value stays open so the message next to the field is seen.
+                if (Editor.HasErrors) IsExpanded = true;
+                OnPropertyChanged(nameof(Summary));
                 if (_loading) return;
                 var rule = Editor.ToRule();
                 if (rule == null) return; // invalid input is shown on the field, never written
@@ -60,12 +63,30 @@ namespace Sentinel.UI.ViewModels
             {
                 if (value == null || Slot.ComponentDefinitionId == value.Id) return;
                 Slot.ComponentDefinitionId = value.Id;
-                OnPropertiesChanged(nameof(Component), nameof(FamilyText));
+                OnPropertiesChanged(nameof(Component), nameof(FamilyText), nameof(IsFamilyMissing), nameof(Summary));
                 _owner.OnEdited("change component");
             }
         }
 
-        public string FamilyText => Component?.FamilyDisplay ?? "(missing component)";
+        public string FamilyText => Component == null ? "Component definition missing" :
+            Component.IsFamilyConfigured ? Component.FamilyDisplay : "No Revit family mapped (Components page)";
+
+        public bool IsFamilyMissing => Component == null || !Component.IsFamilyConfigured;
+
+        /// <summary>One-line placement summary for the collapsed row.</summary>
+        public string Summary => UiChoices.RuleSummary(Editor.ToRule() ?? Slot.Rule, Component?.DefaultMountingHeightMm);
+
+        /// <summary>Expanded rows show the full editor; the page remembers which rows are open across reloads.</summary>
+        public bool IsExpanded
+        {
+            get => _owner.IsExpanded(Slot.Id);
+            set
+            {
+                if (_owner.IsExpanded(Slot.Id) == value) return;
+                _owner.SetExpanded(Slot.Id, value);
+                OnPropertyChanged();
+            }
+        }
     }
 
     /// <summary>Door Set Types page.</summary>
@@ -75,6 +96,16 @@ namespace Sentinel.UI.ViewModels
         private DoorSetDefinition _selected;
         private ComponentDefinition _selectedAdd;
         private bool _loading;
+        private readonly HashSet<string> _expanded = new HashSet<string>();
+
+        internal bool IsExpanded(string slotId) => slotId != null && _expanded.Contains(slotId);
+
+        internal void SetExpanded(string slotId, bool value)
+        {
+            if (slotId == null) return;
+            if (value) _expanded.Add(slotId);
+            else _expanded.Remove(slotId);
+        }
 
         public DoorSetsViewModel(MainViewModel main)
         {
@@ -220,6 +251,7 @@ namespace Sentinel.UI.ViewModels
                 Rule = (SelectedAdd.DefaultPlacement ?? new PlacementRule()).Clone()
             };
             _selected.Components.Add(slot);
+            SetExpanded(slot.Id, true); // a new row opens for editing
             Rows.Add(new SetComponentRowViewModel(this, slot));
             OnEdited("add component");
         }
@@ -256,13 +288,17 @@ namespace Sentinel.UI.ViewModels
                     _selected.DisplayName + " is assigned to " + uses + " door(s). Assign another set to those doors first.", null, true);
                 return;
             }
-            if (!_main.Dialogs.Confirm("Delete door set type", "Delete " + _selected.DisplayName + "?", null, "Delete", "Cancel")) return;
-            Project.DoorSetDefinitions.Remove(_selected);
-            Project.AssignmentRules.Where(r => r.DefinitionId == _selected.Id).ToList().ForEach(r => r.Enabled = false);
-            _main.MarkDirty("delete set");
-            _selected = null;
-            RefreshList();
-            Selected = Definitions.FirstOrDefault();
+            var target = _selected;
+            _main.Dialogs.Confirm("Delete door set type", "Delete " + target.DisplayName + "?", null, "Delete", "Cancel", ok =>
+            {
+                if (!ok || !Project.DoorSetDefinitions.Contains(target)) return;
+                Project.DoorSetDefinitions.Remove(target);
+                Project.AssignmentRules.Where(r => r.DefinitionId == target.Id).ToList().ForEach(r => r.Enabled = false);
+                _main.MarkDirty("delete set");
+                _selected = null;
+                RefreshList();
+                Selected = Definitions.FirstOrDefault();
+            });
         }
     }
 }

@@ -5,322 +5,606 @@
     xmlns:local="clr-namespace:Sentinel.UI"
     xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
     xmlns:views="clr-namespace:Sentinel.UI.Views"
-    Title="Sentinel"
+    x:Name="Root"
+    Title="{Binding WindowTitle, RelativeSource={RelativeSource Self}}"
     Width="1280"
     Height="780"
     MinWidth="980"
     MinHeight="560"
-    AllowsTransparency="True"
-    Background="Transparent"
-    WindowStartupLocation="Manual"
-    WindowStyle="None">
+    Background="{DynamicResource Window.Background}"
+    TextOptions.TextFormattingMode="Display"
+    UseLayoutRounding="True"
+    WindowStartupLocation="Manual">
+    <!--
+        Standard Windows frame behaviour (Aero Snap, Win+arrows, Alt+Space, native resize borders, DWM shadow and
+        Windows 11 rounded corners) with the caption area drawn by Sentinel. Modeless: shown with Show().
+    -->
+    <WindowChrome.WindowChrome>
+        <WindowChrome
+            CaptionHeight="52"
+            CornerRadius="0"
+            GlassFrameThickness="0,0,0,1"
+            NonClientFrameEdges="None"
+            ResizeBorderThickness="6"
+            UseAeroCaptionButtons="False" />
+    </WindowChrome.WindowChrome>
+
     <Window.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <!--  Theme (swapped at runtime by ThemeManager) + shared styles  -->
+                <!--  Palette + materials are inserted at runtime by ThemeManager; styles use DynamicResource  -->
                 <ResourceDictionary Source="pack://application:,,,/Sentinel;component/UI/Themes/DarkTheme.xaml" />
-                <ResourceDictionary Source="pack://application:,,,/Sentinel;component/UI/Themes/SentinelStyles.xaml" />
+                <local:SharedDictionary Source="pack://application:,,,/Sentinel;component/UI/Themes/SentinelStyles.xaml" />
             </ResourceDictionary.MergedDictionaries>
+
+            <!--  Windows caption buttons (familiar placement and size; close turns red)  -->
+            <Style x:Key="CaptionButton" TargetType="{x:Type Button}">
+                <Setter Property="Width" Value="46" />
+                <Setter Property="Height" Value="36" />
+                <Setter Property="Foreground" Value="{DynamicResource Text.Secondary}" />
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="WindowChrome.IsHitTestVisibleInChrome" Value="True" />
+                <Setter Property="IsTabStop" Value="False" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="{x:Type Button}">
+                            <Border x:Name="Bd" Background="{TemplateBinding Background}">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Control.Plain.Hover}" />
+                                    <Setter Property="Foreground" Value="{DynamicResource Text.Primary}" />
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Control.Plain.Pressed}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+            <Style
+                x:Key="CaptionCloseButton"
+                BasedOn="{StaticResource CaptionButton}"
+                TargetType="{x:Type Button}">
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="{x:Type Button}">
+                            <Border x:Name="Bd" Background="{TemplateBinding Background}">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="#C42B1C" />
+                                    <Setter Property="Foreground" Value="White" />
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="#A32519" />
+                                    <Setter Property="Foreground" Value="White" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!--  Sidebar label: hidden in compact (icon-only) mode  -->
+            <Style x:Key="SidebarLabel" TargetType="{x:Type TextBlock}">
+                <Setter Property="Margin" Value="10,0,0,0" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+                <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsCompact, ElementName=Root}" Value="True">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+            <Style x:Key="SidebarIcon" TargetType="{x:Type materialDesign:PackIcon}">
+                <Setter Property="Width" Value="18" />
+                <Setter Property="Height" Value="18" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+                <Setter Property="Foreground" Value="{DynamicResource Accent.Text}" />
+            </Style>
         </ResourceDictionary>
     </Window.Resources>
 
     <Grid
-        Background="Transparent"
-        ClipToBounds="True"
-        MouseLeftButtonUp="Window_MouseLeftButtonUp"
-        MouseMove="Window_MouseMove">
+        x:Name="RootGrid"
+        Background="{DynamicResource Window.Background}"
+        TextElement.FontFamily="{StaticResource Font.Text}"
+        TextElement.FontSize="{StaticResource FontSize.Body}"
+        TextElement.Foreground="{DynamicResource Text.Primary}">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition x:Name="SidebarColumn" Width="212" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
 
-        <!--  Outer border (same chrome as the other RK Tools windows)  -->
+        <!--  ============ Sidebar (structural material: gradient + right edge highlight) ============  -->
         <Border
-            BorderBrush="{DynamicResource BorderBrush}"
-            BorderThickness="2"
-            CornerRadius="10"
-            Opacity="0.7"
-            SnapsToDevicePixels="True">
-            <Border.Effect>
-                <BlurEffect KernelType="Gaussian" Radius="2" />
-            </Border.Effect>
-        </Border>
-
-        <Border
-            Margin="2"
-            Background="{DynamicResource PrimaryBackgroundBrush}"
-            CornerRadius="10">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="30" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-
-                <Border
-                    Height="0.2"
-                    Margin="-2,0,-2,-0.1"
-                    VerticalAlignment="Bottom"
-                    Background="Gray" />
-                <local:TitleBar
-                    x:Name="TitleBarControl"
-                    Title="{Binding WindowTitle, RelativeSource={RelativeSource AncestorType=Window}}"
-                    Margin="0,0,0,1"
-                    Foreground="{DynamicResource ForegroundBrush}" />
-
-                <!--  Save state + theme toggle (left of minimize / close)  -->
+            x:Name="Sidebar"
+            Background="{DynamicResource Sidebar.Material}"
+            BorderBrush="{DynamicResource Sidebar.Edge}"
+            BorderThickness="0,0,1,0">
+            <DockPanel>
+                <!--  App identity (part of the draggable caption)  -->
                 <StackPanel
-                    Margin="0,0,70,0"
-                    HorizontalAlignment="Right"
-                    VerticalAlignment="Center"
+                    Height="52"
+                    Margin="18,0,12,0"
+                    DockPanel.Dock="Top"
                     Orientation="Horizontal">
-                    <TextBlock
-                        Margin="0,0,10,0"
+                    <Border
+                        Width="26"
+                        Height="26"
                         VerticalAlignment="Center"
-                        Style="{StaticResource CaptionText}"
-                        Text="{Binding SaveState}" />
-                    <ToggleButton
-                        x:Name="ThemeToggleButton"
-                        Width="28"
-                        Height="16"
-                        Click="ToggleTheme_Click"
-                        ToolTip="Toggle theme">
-                        <ToggleButton.Template>
-                            <ControlTemplate TargetType="{x:Type ToggleButton}">
-                                <Grid Background="Transparent">
-                                    <materialDesign:PackIcon
-                                        x:Name="Icon"
-                                        Width="30"
-                                        Height="30"
-                                        HorizontalAlignment="Center"
-                                        VerticalAlignment="Center"
-                                        Foreground="{DynamicResource IconBrush}"
-                                        Kind="ToggleSwitchOffOutline" />
-                                </Grid>
-                                <ControlTemplate.Triggers>
-                                    <Trigger Property="IsChecked" Value="False">
-                                        <Setter TargetName="Icon" Property="Kind" Value="ToggleSwitchOutline" />
-                                    </Trigger>
-                                </ControlTemplate.Triggers>
-                            </ControlTemplate>
-                        </ToggleButton.Template>
-                    </ToggleButton>
-                </StackPanel>
-
-                <!--  Banner (read-only / load warnings)  -->
-                <Border
-                    Grid.Row="1"
-                    Margin="10,8,10,0"
-                    Padding="10,6"
-                    Background="{DynamicResource BannerBackgroundBrush}"
-                    CornerRadius="5"
-                    Visibility="{Binding HasBanner, Converter={StaticResource BoolToVis}}">
-                    <DockPanel>
+                        Background="{DynamicResource Accent}"
+                        CornerRadius="7">
                         <materialDesign:PackIcon
                             Width="16"
                             Height="16"
-                            Margin="0,0,8,0"
+                            HorizontalAlignment="Center"
                             VerticalAlignment="Center"
-                            Foreground="{DynamicResource WarningBrush}"
-                            Kind="AlertOutline" />
+                            Foreground="{DynamicResource Text.OnAccent}"
+                            Kind="ShieldLockOutline" />
+                    </Border>
+                    <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
                         <TextBlock
-                            FontSize="11.5"
-                            Style="{StaticResource BodyText}"
-                            Text="{Binding Banner}" />
-                    </DockPanel>
-                </Border>
-
-                <!--  Navigation rail + pages  -->
-                <Grid Grid.Row="2" Margin="0,8,10,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="84" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-
-                    <StackPanel Margin="4,0,6,0">
-                        <RadioButton
-                            GroupName="Nav"
-                            IsChecked="{Binding IsDoorsPage}"
-                            Style="{StaticResource NavRailButton}"
-                            ToolTip="Doors: discover doors, assign sets, preview and place">
-                            <StackPanel>
-                                <materialDesign:PackIcon
-                                    Width="22"
-                                    Height="22"
-                                    HorizontalAlignment="Center"
-                                    Kind="DoorClosedLock" />
-                                <TextBlock
-                                    Margin="0,2,0,0"
-                                    HorizontalAlignment="Center"
-                                    FontSize="11"
-                                    Text="Doors" />
-                            </StackPanel>
-                        </RadioButton>
-                        <RadioButton
-                            GroupName="Nav"
-                            IsChecked="{Binding IsDoorSetsPage}"
-                            Style="{StaticResource NavRailButton}"
-                            ToolTip="Door set types and their component placement rules">
-                            <StackPanel>
-                                <materialDesign:PackIcon
-                                    Width="22"
-                                    Height="22"
-                                    HorizontalAlignment="Center"
-                                    Kind="LayersTripleOutline" />
-                                <TextBlock
-                                    Margin="0,2,0,0"
-                                    HorizontalAlignment="Center"
-                                    FontSize="11"
-                                    Text="Door Sets" />
-                            </StackPanel>
-                        </RadioButton>
-                        <RadioButton
-                            GroupName="Nav"
-                            IsChecked="{Binding IsRulesPage}"
-                            Style="{StaticResource NavRailButton}"
-                            ToolTip="Rule-based door set suggestions">
-                            <StackPanel>
-                                <materialDesign:PackIcon
-                                    Width="22"
-                                    Height="22"
-                                    HorizontalAlignment="Center"
-                                    Kind="SourceBranch" />
-                                <TextBlock
-                                    Margin="0,2,0,0"
-                                    HorizontalAlignment="Center"
-                                    FontSize="11"
-                                    Text="Rules" />
-                            </StackPanel>
-                        </RadioButton>
-                        <RadioButton
-                            GroupName="Nav"
-                            IsChecked="{Binding IsComponentsPage}"
-                            Style="{StaticResource NavRailButton}"
-                            ToolTip="Component library and Revit family mapping">
-                            <StackPanel>
-                                <materialDesign:PackIcon
-                                    Width="22"
-                                    Height="22"
-                                    HorizontalAlignment="Center"
-                                    Kind="CardAccountDetailsOutline" />
-                                <TextBlock
-                                    Margin="0,2,0,0"
-                                    HorizontalAlignment="Center"
-                                    FontSize="11"
-                                    Text="Components" />
-                            </StackPanel>
-                        </RadioButton>
-                        <RadioButton
-                            GroupName="Nav"
-                            IsChecked="{Binding IsSettingsPage}"
-                            Style="{StaticResource NavRailButton}"
-                            ToolTip="Settings, library import/export, data information">
-                            <StackPanel>
-                                <materialDesign:PackIcon
-                                    Width="22"
-                                    Height="22"
-                                    HorizontalAlignment="Center"
-                                    Kind="CogOutline" />
-                                <TextBlock
-                                    Margin="0,2,0,0"
-                                    HorizontalAlignment="Center"
-                                    FontSize="11"
-                                    Text="Settings" />
-                            </StackPanel>
-                        </RadioButton>
+                            FontWeight="SemiBold"
+                            Style="{StaticResource SidebarLabel}"
+                            Text="Sentinel" />
+                        <TextBlock
+                            MaxWidth="140"
+                            FontSize="{StaticResource FontSize.Caption}"
+                            Foreground="{DynamicResource Text.Tertiary}"
+                            Style="{StaticResource SidebarLabel}"
+                            Text="{Binding DocumentTitle}"
+                            ToolTip="{Binding DocumentTitle}" />
                     </StackPanel>
+                </StackPanel>
 
-                    <Grid Grid.Column="1">
-                        <views:DoorsView DataContext="{Binding Doors}" Visibility="{Binding DataContext.IsDoorsPage, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}" />
-                        <views:DoorSetsView DataContext="{Binding DoorSets}" Visibility="{Binding DataContext.IsDoorSetsPage, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}" />
-                        <views:RulesView DataContext="{Binding Rules}" Visibility="{Binding DataContext.IsRulesPage, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}" />
-                        <views:ComponentsView DataContext="{Binding Components}" Visibility="{Binding DataContext.IsComponentsPage, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}" />
-                        <views:SettingsView DataContext="{Binding Settings}" Visibility="{Binding DataContext.IsSettingsPage, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}" />
-                    </Grid>
-                </Grid>
+                <!--  Footer: appearance toggle  -->
+                <StackPanel Margin="0,0,0,12" DockPanel.Dock="Bottom">
+                    <Button
+                        x:Name="ThemeButton"
+                        Height="32"
+                        Margin="8,0"
+                        Padding="10,0"
+                        HorizontalContentAlignment="Left"
+                        AutomationProperties.Name="Switch between dark and light appearance"
+                        Click="ToggleTheme_Click"
+                        Style="{StaticResource Button.Plain}"
+                        ToolTip="Switch between dark and light appearance">
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon
+                                x:Name="ThemeIcon"
+                                Width="16"
+                                Height="16"
+                                VerticalAlignment="Center"
+                                Foreground="{DynamicResource Text.Secondary}"
+                                Kind="WeatherNight" />
+                            <TextBlock
+                                x:Name="ThemeText"
+                                Foreground="{DynamicResource Text.Secondary}"
+                                Style="{StaticResource SidebarLabel}"
+                                Text="Dark appearance" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
 
-                <!--  Status bar  -->
-                <DockPanel
-                    Grid.Row="3"
-                    Height="30"
-                    Margin="14,4,14,6">
-                    <StackPanel
+                <!--  Navigation  -->
+                <StackPanel
+                    Margin="0,6,0,0"
+                    AutomationProperties.Name="Pages"
+                    KeyboardNavigation.DirectionalNavigation="Cycle"
+                    KeyboardNavigation.TabNavigation="Once">
+                    <TextBlock
+                        Margin="20,4,0,6"
+                        FontSize="{StaticResource FontSize.Caption}"
+                        FontWeight="SemiBold"
+                        Foreground="{DynamicResource Text.Tertiary}"
+                        Style="{StaticResource SidebarLabel}"
+                        Text="Workflow" />
+                    <RadioButton
+                        AutomationProperties.Name="Doors"
+                        GroupName="Nav"
+                        IsChecked="{Binding IsDoorsPage}"
+                        Style="{StaticResource SidebarItem}"
+                        ToolTip="Doors – find, assign, review and place (Ctrl+1)">
+                        <DockPanel>
+                            <Border
+                                Margin="6,0,0,0"
+                                DockPanel.Dock="Right"
+                                Style="{StaticResource Badge.Warning}"
+                                ToolTip="Doors that need attention">
+                                <Border.Visibility>
+                                    <MultiBinding Converter="{x:Static local:BadgeVisibility.Instance}">
+                                        <Binding Path="Doors.CountAttention" />
+                                        <Binding ElementName="Root" Path="IsCompact" />
+                                    </MultiBinding>
+                                </Border.Visibility>
+                                <TextBlock Text="{Binding Doors.CountAttention}" />
+                            </Border>
+                            <StackPanel Orientation="Horizontal">
+                                <materialDesign:PackIcon Kind="DoorClosedLock" Style="{StaticResource SidebarIcon}" />
+                                <TextBlock Style="{StaticResource SidebarLabel}" Text="Doors" />
+                            </StackPanel>
+                        </DockPanel>
+                    </RadioButton>
+                    <RadioButton
+                        AutomationProperties.Name="Door Sets"
+                        GroupName="Nav"
+                        IsChecked="{Binding IsDoorSetsPage}"
+                        Style="{StaticResource SidebarItem}"
+                        ToolTip="Door set types and component placement (Ctrl+2)">
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon Kind="LayersTripleOutline" Style="{StaticResource SidebarIcon}" />
+                            <TextBlock Style="{StaticResource SidebarLabel}" Text="Door Sets" />
+                        </StackPanel>
+                    </RadioButton>
+                    <TextBlock
+                        Margin="20,16,0,6"
+                        FontSize="{StaticResource FontSize.Caption}"
+                        FontWeight="SemiBold"
+                        Foreground="{DynamicResource Text.Tertiary}"
+                        Style="{StaticResource SidebarLabel}"
+                        Text="Library" />
+                    <RadioButton
+                        AutomationProperties.Name="Components"
+                        GroupName="Nav"
+                        IsChecked="{Binding IsComponentsPage}"
+                        Style="{StaticResource SidebarItem}"
+                        ToolTip="Component library and Revit family mapping (Ctrl+3)">
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon Kind="CardAccountDetailsOutline" Style="{StaticResource SidebarIcon}" />
+                            <TextBlock Style="{StaticResource SidebarLabel}" Text="Components" />
+                        </StackPanel>
+                    </RadioButton>
+                    <RadioButton
+                        AutomationProperties.Name="Rules"
+                        GroupName="Nav"
+                        IsChecked="{Binding IsRulesPage}"
+                        Style="{StaticResource SidebarItem}"
+                        ToolTip="Rule-based door set suggestions (Ctrl+4)">
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon Kind="SourceBranch" Style="{StaticResource SidebarIcon}" />
+                            <TextBlock Style="{StaticResource SidebarLabel}" Text="Rules" />
+                        </StackPanel>
+                    </RadioButton>
+                    <RadioButton
+                        AutomationProperties.Name="Settings"
+                        GroupName="Nav"
+                        IsChecked="{Binding IsSettingsPage}"
+                        Style="{StaticResource SidebarItem}"
+                        ToolTip="Settings, library import and export (Ctrl+5)">
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon Kind="CogOutline" Style="{StaticResource SidebarIcon}" />
+                            <TextBlock Style="{StaticResource SidebarLabel}" Text="Settings" />
+                        </StackPanel>
+                    </RadioButton>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!--  ============ Content column ============  -->
+        <Grid Grid.Column="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="52" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <!--  Title area: page title, save state, caption buttons (draggable)  -->
+            <DockPanel Background="Transparent">
+                <StackPanel
+                    VerticalAlignment="Top"
+                    DockPanel.Dock="Right"
+                    Orientation="Horizontal">
+                    <Button
+                        AutomationProperties.Name="Minimize"
+                        Click="Minimize_Click"
+                        Style="{StaticResource CaptionButton}"
+                        ToolTip="Minimize">
+                        <materialDesign:PackIcon
+                            Width="14"
+                            Height="14"
+                            Kind="WindowMinimize" />
+                    </Button>
+                    <Button
+                        x:Name="MaximizeButton"
+                        AutomationProperties.Name="Maximize"
+                        Click="Maximize_Click"
+                        Style="{StaticResource CaptionButton}"
+                        ToolTip="Maximize">
+                        <materialDesign:PackIcon
+                            x:Name="MaximizeIcon"
+                            Width="14"
+                            Height="14"
+                            Kind="WindowMaximize" />
+                    </Button>
+                    <Button
+                        AutomationProperties.Name="Close"
+                        Click="Close_Click"
+                        Style="{StaticResource CaptionCloseButton}"
+                        ToolTip="Close">
+                        <materialDesign:PackIcon
+                            Width="14"
+                            Height="14"
+                            Kind="WindowClose" />
+                    </Button>
+                </StackPanel>
+
+                <!--  Save state: glyph + words, never colour alone  -->
+                <StackPanel
+                    Margin="0,0,12,0"
+                    VerticalAlignment="Center"
+                    DockPanel.Dock="Right"
+                    Orientation="Horizontal"
+                    ToolTip="Sentinel saves its data in the Revit project automatically (Ctrl+S saves now)">
+                    <materialDesign:PackIcon
+                        Width="14"
+                        Height="14"
+                        Margin="0,0,6,0"
+                        VerticalAlignment="Center">
+                        <materialDesign:PackIcon.Style>
+                            <Style TargetType="{x:Type materialDesign:PackIcon}">
+                                <Setter Property="Kind" Value="CloudCheckOutline" />
+                                <Setter Property="Foreground" Value="{DynamicResource Text.Tertiary}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsSaveProblem}" Value="True">
+                                        <Setter Property="Kind" Value="CloudAlertOutline" />
+                                        <Setter Property="Foreground" Value="{DynamicResource Status.Warning}" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding IsReadOnly}" Value="True">
+                                        <Setter Property="Kind" Value="LockOutline" />
+                                        <Setter Property="Foreground" Value="{DynamicResource Status.Warning}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </materialDesign:PackIcon.Style>
+                    </materialDesign:PackIcon>
+                    <TextBlock
+                        VerticalAlignment="Center"
+                        Style="{StaticResource Type.Caption}"
+                        Text="{Binding SaveState}" />
+                </StackPanel>
+
+                <StackPanel
+                    Margin="24,0,12,0"
+                    VerticalAlignment="Center"
+                    Orientation="Horizontal">
+                    <TextBlock
+                        VerticalAlignment="Center"
+                        Style="{StaticResource Type.Title}"
+                        Text="{Binding PageTitle}" />
+                    <TextBlock
+                        x:Name="PageSubtitleText"
+                        Margin="12,3,0,0"
+                        VerticalAlignment="Center"
+                        Style="{StaticResource Type.Secondary}"
+                        Text="{Binding PageSubtitle}"
+                        TextTrimming="CharacterEllipsis"
+                        TextWrapping="NoWrap" />
+                </StackPanel>
+            </DockPanel>
+
+            <!--  Banner (read-only / load warnings)  -->
+            <Border
+                Grid.Row="1"
+                Margin="24,0,24,10"
+                Padding="12,8"
+                Background="{DynamicResource Status.Warning.Subtle}"
+                BorderBrush="{DynamicResource Status.Warning}"
+                BorderThickness="1"
+                CornerRadius="{StaticResource Radius.Control}"
+                Visibility="{Binding HasBanner, Converter={StaticResource BoolToVis}}">
+                <DockPanel>
+                    <materialDesign:PackIcon
+                        Width="16"
+                        Height="16"
                         Margin="0,0,10,0"
-                        DockPanel.Dock="Left"
-                        Orientation="Horizontal"
-                        Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}">
-                        <ProgressBar
-                            Width="70"
-                            Height="4"
-                            Margin="0,0,8,0"
-                            VerticalAlignment="Center"
-                            Background="{DynamicResource SecondaryBackgroundBrush}"
-                            BorderThickness="0"
-                            Foreground="{DynamicResource AccentBrush}"
-                            IsIndeterminate="True" />
-                        <TextBlock
-                            VerticalAlignment="Center"
-                            Style="{StaticResource CaptionText}"
-                            Text="{Binding BusyText}" />
-                    </StackPanel>
-                    <TextBlock
-                        Margin="12,0,0,0"
+                        VerticalAlignment="Top"
+                        Foreground="{DynamicResource Status.Warning}"
+                        Kind="AlertOutline" />
+                    <TextBlock Style="{StaticResource Type.Body}" Text="{Binding Banner}" />
+                </DockPanel>
+            </Border>
+
+            <!--  Pages  -->
+            <Grid Grid.Row="2" Margin="24,0,24,0">
+                <views:DoorsView
+                    x:Name="DoorsPage"
+                    DataContext="{Binding Doors}"
+                    Visibility="{Binding DataContext.IsDoorsPage, ElementName=Root, Converter={StaticResource BoolToVis}}" />
+                <views:DoorSetsView DataContext="{Binding DoorSets}" Visibility="{Binding DataContext.IsDoorSetsPage, ElementName=Root, Converter={StaticResource BoolToVis}}" />
+                <views:RulesView DataContext="{Binding Rules}" Visibility="{Binding DataContext.IsRulesPage, ElementName=Root, Converter={StaticResource BoolToVis}}" />
+                <views:ComponentsView DataContext="{Binding Components}" Visibility="{Binding DataContext.IsComponentsPage, ElementName=Root, Converter={StaticResource BoolToVis}}" />
+                <views:SettingsView DataContext="{Binding Settings}" Visibility="{Binding DataContext.IsSettingsPage, ElementName=Root, Converter={StaticResource BoolToVis}}" />
+            </Grid>
+
+            <!--  Feedback line: result of the last action, directly under the content (glyph + text)  -->
+            <DockPanel
+                Grid.Row="3"
+                MinHeight="34"
+                Margin="24,6,24,6"
+                AutomationProperties.LiveSetting="Polite"
+                AutomationProperties.Name="Status">
+                <StackPanel
+                    Margin="0,0,14,0"
+                    VerticalAlignment="Center"
+                    DockPanel.Dock="Left"
+                    Orientation="Horizontal"
+                    Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}">
+                    <ProgressBar
+                        Width="60"
+                        Height="4"
+                        Margin="0,0,8,0"
                         VerticalAlignment="Center"
-                        DockPanel.Dock="Right"
-                        Style="{StaticResource CaptionText}"
-                        Text="{Binding Doors.Summary}" />
+                        Background="{DynamicResource Surface.Inset}"
+                        BorderThickness="0"
+                        Foreground="{DynamicResource Accent}"
+                        IsIndeterminate="True" />
                     <TextBlock
                         VerticalAlignment="Center"
-                        FontSize="11.5"
+                        Foreground="{DynamicResource Text.Secondary}"
+                        Text="{Binding BusyText}" />
+                </StackPanel>
+                <TextBlock
+                    Margin="14,0,0,0"
+                    VerticalAlignment="Center"
+                    DockPanel.Dock="Right"
+                    Style="{StaticResource Type.Caption}"
+                    Text="{Binding Doors.Summary}"
+                    TextWrapping="NoWrap" />
+                <StackPanel VerticalAlignment="Center" Orientation="Horizontal">
+                    <materialDesign:PackIcon
+                        Width="15"
+                        Height="15"
+                        Margin="0,0,8,0"
+                        VerticalAlignment="Center"
+                        Visibility="{Binding StatusMessage, Converter={StaticResource NotEmptyToVis}}">
+                        <materialDesign:PackIcon.Style>
+                            <Style TargetType="{x:Type materialDesign:PackIcon}">
+                                <Setter Property="Kind" Value="InformationOutline" />
+                                <Setter Property="Foreground" Value="{DynamicResource Text.Secondary}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding StatusIsError}" Value="True">
+                                        <Setter Property="Kind" Value="AlertCircleOutline" />
+                                        <Setter Property="Foreground" Value="{DynamicResource Status.Error}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </materialDesign:PackIcon.Style>
+                    </materialDesign:PackIcon>
+                    <TextBlock
+                        x:Name="StatusText"
+                        VerticalAlignment="Center"
                         Text="{Binding StatusMessage}"
                         TextTrimming="CharacterEllipsis"
                         ToolTip="{Binding StatusMessage}">
                         <TextBlock.Style>
                             <Style TargetType="{x:Type TextBlock}">
-                                <Setter Property="Foreground" Value="{DynamicResource ForegroundBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource Text.Secondary}" />
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding StatusIsError}" Value="True">
-                                        <Setter Property="Foreground" Value="{DynamicResource ErrorBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource Status.Error}" />
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
                         </TextBlock.Style>
                     </TextBlock>
-                </DockPanel>
-            </Grid>
-        </Border>
+                </StackPanel>
+            </DockPanel>
+        </Grid>
 
-        <!--  Resize edges  -->
-        <Border
-            Width="5"
-            HorizontalAlignment="Left"
-            Background="Transparent"
-            Cursor="SizeWE"
-            MouseLeftButtonDown="LeftEdge_MouseLeftButtonDown" />
-        <Border
-            Width="5"
-            HorizontalAlignment="Right"
-            Background="Transparent"
-            Cursor="SizeWE"
-            MouseLeftButtonDown="RightEdge_MouseLeftButtonDown" />
-        <Border
-            Height="5"
-            VerticalAlignment="Bottom"
-            Background="Transparent"
-            Cursor="SizeNS"
-            MouseLeftButtonDown="BottomEdge_MouseLeftButtonDown" />
-        <Border
-            Width="10"
-            Height="10"
-            HorizontalAlignment="Left"
-            VerticalAlignment="Bottom"
-            Background="Transparent"
-            Cursor="SizeNESW"
-            MouseLeftButtonDown="BottomLeftCorner_MouseLeftButtonDown" />
-        <Border
-            Width="10"
-            Height="10"
-            HorizontalAlignment="Right"
-            VerticalAlignment="Bottom"
-            Background="Transparent"
-            Cursor="SizeNWSE"
-            MouseLeftButtonDown="BottomRightCorner_MouseLeftButtonDown" />
+        <!--  ============ Sheet (in-window, replaces modal dialogs) ============  -->
+        <Grid
+            x:Name="SheetHost"
+            Grid.ColumnSpan="2"
+            Visibility="Collapsed">
+            <Border Background="{DynamicResource Scrim}" MouseLeftButtonDown="Scrim_MouseDown" />
+            <Border
+                x:Name="SheetCard"
+                Width="460"
+                MaxHeight="{Binding ActualHeight, ElementName=SheetHost, Converter={x:Static local:SubtractConverter.Instance}, ConverterParameter=96}"
+                Margin="0,56,0,0"
+                Padding="22,20,22,18"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Top"
+                AutomationProperties.Name="{Binding Current.Title}"
+                KeyboardNavigation.ControlTabNavigation="Cycle"
+                KeyboardNavigation.DirectionalNavigation="Contained"
+                KeyboardNavigation.TabNavigation="Cycle"
+                Style="{StaticResource Floating}">
+                <DockPanel DataContext="{Binding Current}">
+                    <!--  Buttons: secondary left of primary, primary is the default (Enter), secondary cancels (Esc)  -->
+                    <StackPanel
+                        Margin="0,18,0,0"
+                        HorizontalAlignment="Right"
+                        DockPanel.Dock="Bottom"
+                        Orientation="Horizontal">
+                        <Button
+                            x:Name="SheetSecondary"
+                            MinWidth="88"
+                            Margin="0,0,8,0"
+                            Click="SheetSecondary_Click"
+                            Content="{Binding SecondaryText}"
+                            Style="{StaticResource Button.Secondary}"
+                            Visibility="{Binding HasSecondary, Converter={StaticResource BoolToVis}}" />
+                        <Button
+                            x:Name="SheetPrimary"
+                            MinWidth="88"
+                            Click="SheetPrimary_Click"
+                            Content="{Binding PrimaryText}"
+                            Style="{StaticResource Button.Primary}" />
+                    </StackPanel>
+
+                    <DockPanel Margin="0,0,0,10" DockPanel.Dock="Top">
+                        <materialDesign:PackIcon
+                            Width="22"
+                            Height="22"
+                            Margin="0,0,12,0"
+                            VerticalAlignment="Top">
+                            <materialDesign:PackIcon.Style>
+                                <Style TargetType="{x:Type materialDesign:PackIcon}">
+                                    <Setter Property="Kind" Value="HelpCircleOutline" />
+                                    <Setter Property="Foreground" Value="{DynamicResource Accent.Text}" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasSecondary}" Value="False">
+                                            <Setter Property="Kind" Value="InformationOutline" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding IsError}" Value="True">
+                                            <Setter Property="Kind" Value="AlertCircleOutline" />
+                                            <Setter Property="Foreground" Value="{DynamicResource Status.Error}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </materialDesign:PackIcon.Style>
+                        </materialDesign:PackIcon>
+                        <TextBlock
+                            VerticalAlignment="Center"
+                            Style="{StaticResource Type.Section}"
+                            Text="{Binding Title}"
+                            TextWrapping="Wrap" />
+                    </DockPanel>
+
+                    <ScrollViewer
+                        Focusable="False"
+                        HorizontalScrollBarVisibility="Disabled"
+                        VerticalScrollBarVisibility="Auto">
+                        <StackPanel Margin="34,0,0,0">
+                            <TextBlock Style="{StaticResource Type.Body}" Text="{Binding Message}" />
+                            <Border
+                                Margin="0,12,0,0"
+                                Style="{StaticResource InsetCard}"
+                                Visibility="{Binding HasDetails, Converter={StaticResource BoolToVis}}">
+                                <TextBlock
+                                    FontFamily="{StaticResource Font.Mono}"
+                                    Style="{StaticResource Type.Secondary}"
+                                    Text="{Binding Details}" />
+                            </Border>
+                            <CheckBox
+                                x:Name="SheetOption"
+                                Margin="0,14,0,0"
+                                Content="{Binding OptionText}"
+                                IsChecked="{Binding Option}"
+                                Style="{StaticResource Input.Check}"
+                                Visibility="{Binding HasOption, Converter={StaticResource BoolToVis}}" />
+                            <StackPanel Margin="0,14,0,0" Visibility="{Binding HasPath, Converter={StaticResource BoolToVis}}">
+                                <TextBlock
+                                    Margin="0,0,0,6"
+                                    Style="{StaticResource Type.Label}"
+                                    Text="File" />
+                                <TextBox
+                                    x:Name="SheetPath"
+                                    AutomationProperties.Name="File path"
+                                    Style="{StaticResource Input.Text}"
+                                    Text="{Binding Path, UpdateSourceTrigger=PropertyChanged}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+        </Grid>
     </Grid>
 </Window>

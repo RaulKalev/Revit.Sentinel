@@ -2,67 +2,94 @@
     x:Class="Sentinel.UI.Views.RulesView"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes">
+    xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+    xmlns:ui="clr-namespace:Sentinel.UI">
     <UserControl.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="pack://application:,,,/Sentinel;component/UI/Themes/SentinelStyles.xaml" />
+                <ui:SharedDictionary Source="pack://application:,,,/Sentinel;component/UI/Themes/SentinelStyles.xaml" />
             </ResourceDictionary.MergedDictionaries>
+            <Style
+                x:Key="FieldLabel"
+                BasedOn="{StaticResource Type.Label}"
+                TargetType="{x:Type TextBlock}">
+                <Setter Property="Margin" Value="0,0,0,4" />
+            </Style>
         </ResourceDictionary>
     </UserControl.Resources>
 
     <!--  DataContext: RulesViewModel  -->
-    <Grid>
+    <Grid Margin="0,0,0,4">
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="280" />
-            <ColumnDefinition Width="10" />
+            <ColumnDefinition Width="260" />
+            <ColumnDefinition Width="12" />
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
-        <Border Style="{StaticResource Panel}">
+        <!--  ===== Rule list =====  -->
+        <Border Style="{StaticResource Surface}">
             <DockPanel>
+                <DockPanel Margin="14,12,8,4" DockPanel.Dock="Top">
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                        <Button
+                            AutomationProperties.Name="New rule"
+                            Command="{Binding NewCommand}"
+                            Style="{StaticResource Button.Icon}"
+                            ToolTip="New rule">
+                            <materialDesign:PackIcon
+                                Width="17"
+                                Height="17"
+                                Kind="Plus" />
+                        </Button>
+                        <Button
+                            AutomationProperties.Name="Delete rule"
+                            Command="{Binding DeleteCommand}"
+                            Style="{StaticResource Button.Icon}"
+                            ToolTip="Delete the selected rule">
+                            <materialDesign:PackIcon
+                                Width="17"
+                                Height="17"
+                                Kind="DeleteOutline" />
+                        </Button>
+                    </StackPanel>
+                    <TextBlock
+                        VerticalAlignment="Center"
+                        Style="{StaticResource Type.Heading}"
+                        Text="Rules" />
+                </DockPanel>
                 <TextBlock
-                    Margin="0,0,0,4"
+                    Margin="14,0,14,8"
                     DockPanel.Dock="Top"
-                    Style="{StaticResource PageTitleText}"
-                    Text="Assignment Rules" />
-                <TextBlock
-                    Margin="0,0,0,8"
-                    DockPanel.Dock="Top"
-                    Style="{StaticResource CaptionText}"
-                    Text="Rules only suggest door sets (Doors page → Suggest from rules). Lower priority number wins." />
-                <WrapPanel Margin="0,8,0,0" DockPanel.Dock="Bottom">
-                    <Button
-                        Command="{Binding NewCommand}"
-                        Content="New rule"
-                        Style="{StaticResource ActionButton}" />
-                    <Button
-                        Command="{Binding DeleteCommand}"
-                        Content="Delete"
-                        Style="{StaticResource ActionButton}" />
-                </WrapPanel>
+                    Style="{StaticResource Type.Caption}"
+                    Text="Rules suggest sets; nothing is assigned until you confirm. The lowest priority number wins." />
                 <ListBox
+                    Margin="6,0,6,6"
+                    AutomationProperties.Name="Rules"
                     ItemsSource="{Binding Rules}"
                     SelectedItem="{Binding Selected}"
                     Style="{StaticResource MasterList}">
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <DockPanel>
-                                <TextBlock
-                                    Width="34"
+                                <Border
+                                    MinWidth="26"
+                                    Margin="0,0,10,0"
                                     DockPanel.Dock="Left"
-                                    Style="{StaticResource CaptionText}"
-                                    Text="{Binding Priority}" />
-                                <TextBlock
+                                    Style="{StaticResource Badge}"
+                                    ToolTip="Priority">
+                                    <TextBlock HorizontalAlignment="Center" Text="{Binding Priority}" />
+                                </Border>
+                                <Border
+                                    Margin="6,0,0,0"
                                     DockPanel.Dock="Right"
-                                    Style="{StaticResource CaptionText}"
-                                    Text="off"
-                                    Visibility="{Binding Enabled, Converter={StaticResource InverseBoolToVis}}" />
+                                    Style="{StaticResource Badge}"
+                                    Visibility="{Binding Enabled, Converter={StaticResource InverseBoolToVis}}">
+                                    <TextBlock Text="Off" />
+                                </Border>
                                 <TextBlock
-                                    Style="{StaticResource BodyText}"
+                                    VerticalAlignment="Center"
                                     Text="{Binding Name}"
-                                    TextTrimming="CharacterEllipsis"
-                                    TextWrapping="NoWrap" />
+                                    TextTrimming="CharacterEllipsis" />
                             </DockPanel>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
@@ -70,139 +97,185 @@
             </DockPanel>
         </Border>
 
-        <Border
-            Grid.Column="2"
-            Padding="0"
-            Style="{StaticResource Panel}">
+        <!--  ===== Rule editor =====  -->
+        <Border Grid.Column="2" Style="{StaticResource Surface}">
             <Grid>
-                <TextBlock
+                <StackPanel
+                    MaxWidth="360"
                     HorizontalAlignment="Center"
                     VerticalAlignment="Center"
-                    Style="{StaticResource CaptionText}"
-                    Text="No rule selected. Rules are optional – door sets can always be assigned manually."
-                    Visibility="{Binding HasSelection, Converter={StaticResource InverseBoolToVis}}" />
+                    Visibility="{Binding HasSelection, Converter={StaticResource InverseBoolToVis}}">
+                    <materialDesign:PackIcon
+                        Width="34"
+                        Height="34"
+                        HorizontalAlignment="Center"
+                        Foreground="{DynamicResource Text.Tertiary}"
+                        Kind="SourceBranch" />
+                    <TextBlock
+                        Margin="0,10,0,0"
+                        Style="{StaticResource Type.Secondary}"
+                        Text="Rules are optional – door sets can always be assigned by hand. Create a rule with + to suggest sets automatically."
+                        TextAlignment="Center" />
+                </StackPanel>
+
                 <ScrollViewer
                     HorizontalScrollBarVisibility="Disabled"
                     VerticalScrollBarVisibility="Auto"
                     Visibility="{Binding HasSelection, Converter={StaticResource BoolToVis}}">
-                    <StackPanel Margin="14,12">
+                    <StackPanel Margin="20,16,20,20">
                         <StackPanel IsEnabled="{Binding IsEditable}">
                             <Grid>
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="16" />
-                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="12" />
                                     <ColumnDefinition Width="90" />
                                 </Grid.ColumnDefinitions>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                </Grid.RowDefinitions>
-                                <TextBlock Style="{StaticResource LabelText}" Text="Name" />
-                                <TextBox
-                                    Grid.Column="1"
-                                    Margin="0,2"
-                                    Style="{StaticResource InputTextBox}"
-                                    Text="{Binding RuleName, UpdateSourceTrigger=LostFocus}" />
-                                <TextBlock
-                                    Grid.Column="3"
-                                    Style="{StaticResource LabelText}"
-                                    Text="Priority" />
-                                <TextBox
-                                    Grid.Column="4"
-                                    Margin="0,2"
-                                    Style="{StaticResource InputTextBox}"
-                                    Text="{Binding Priority, UpdateSourceTrigger=LostFocus}" />
-                                <TextBlock
-                                    Grid.Row="1"
-                                    Style="{StaticResource LabelText}"
-                                    Text="Then door set" />
-                                <ComboBox
-                                    Grid.Row="1"
-                                    Grid.Column="1"
-                                    Margin="0,2"
-                                    DisplayMemberPath="DisplayName"
-                                    ItemsSource="{Binding Definitions}"
-                                    SelectedItem="{Binding TargetSet}"
-                                    Style="{StaticResource InputComboBox}" />
-                                <CheckBox
-                                    Grid.Row="1"
-                                    Grid.Column="3"
-                                    Grid.ColumnSpan="2"
-                                    Margin="0,0,0,0"
-                                    Content="Enabled"
-                                    IsChecked="{Binding Enabled}"
-                                    Style="{StaticResource InputCheckBox}" />
+                                <StackPanel>
+                                    <TextBlock Style="{StaticResource FieldLabel}" Text="Name" />
+                                    <TextBox
+                                        AutomationProperties.Name="Rule name"
+                                        FontWeight="SemiBold"
+                                        Style="{StaticResource Input.Text}"
+                                        Text="{Binding RuleName, UpdateSourceTrigger=LostFocus}" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Style="{StaticResource FieldLabel}" Text="Priority" />
+                                    <TextBox
+                                        AutomationProperties.Name="Priority"
+                                        Style="{StaticResource Input.Text}"
+                                        Text="{Binding Priority, UpdateSourceTrigger=LostFocus}"
+                                        ToolTip="Lower numbers are tried first" />
+                                </StackPanel>
                             </Grid>
+                            <CheckBox
+                                Margin="0,10,0,0"
+                                Content="Rule is enabled"
+                                IsChecked="{Binding Enabled}"
+                                Style="{StaticResource Input.Check}" />
 
-                            <TextBlock Style="{StaticResource SectionCaption}" Text="IF" />
-                            <ComboBox
-                                Width="220"
-                                Margin="0,0,0,8"
-                                HorizontalAlignment="Left"
-                                DisplayMemberPath="Text"
-                                ItemsSource="{Binding MatchModes}"
-                                SelectedItem="{Binding MatchMode}"
-                                Style="{StaticResource InputComboBox}" />
-                            <ItemsControl ItemsSource="{Binding Conditions}">
+                            <!--  IF  -->
+                            <StackPanel Margin="0,24,0,10" Orientation="Horizontal">
+                                <TextBlock
+                                    Margin="0,0,10,0"
+                                    VerticalAlignment="Center"
+                                    Style="{StaticResource Type.Section}"
+                                    Text="If" />
+                                <ComboBox
+                                    Width="200"
+                                    AutomationProperties.Name="Condition match mode"
+                                    DisplayMemberPath="Text"
+                                    ItemsSource="{Binding MatchModes}"
+                                    SelectedItem="{Binding MatchMode}"
+                                    Style="{StaticResource Input.Combo}" />
+                            </StackPanel>
+                            <ItemsControl
+                                AutomationProperties.Name="Conditions"
+                                Focusable="False"
+                                ItemsSource="{Binding Conditions}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <DockPanel Margin="0,0,0,4">
+                                        <DockPanel Margin="0,0,0,6">
                                             <Button
+                                                Margin="6,0,0,0"
+                                                AutomationProperties.Name="Remove condition"
                                                 Command="{Binding RemoveCommand}"
                                                 DockPanel.Dock="Right"
-                                                Style="{StaticResource IconButton}"
+                                                Style="{StaticResource Button.Icon}"
                                                 ToolTip="Remove condition">
-                                                <materialDesign:PackIcon Kind="DeleteOutline" />
+                                                <materialDesign:PackIcon Kind="MinusCircleOutline" />
                                             </Button>
                                             <ComboBox
-                                                Width="170"
+                                                Width="180"
                                                 Margin="0,0,6,0"
+                                                AutomationProperties.Name="Door property"
                                                 IsEditable="True"
                                                 ItemsSource="{Binding FieldChoices}"
-                                                Style="{StaticResource InputComboBox}"
+                                                Style="{StaticResource Input.Combo}"
                                                 Text="{Binding Field, UpdateSourceTrigger=LostFocus}"
-                                                ToolTip="Door property: built-in fields or any captured source parameter (Settings)." />
+                                                ToolTip="Door property: built-in fields or any captured source parameter (Settings)" />
                                             <ComboBox
                                                 Width="140"
                                                 Margin="0,0,6,0"
+                                                AutomationProperties.Name="Operator"
                                                 DisplayMemberPath="Text"
                                                 ItemsSource="{Binding Operators}"
                                                 SelectedItem="{Binding Operator}"
-                                                Style="{StaticResource InputComboBox}" />
+                                                Style="{StaticResource Input.Combo}" />
                                             <TextBox
-                                                Margin="0,0,6,0"
+                                                AutomationProperties.Name="Value"
                                                 IsEnabled="{Binding NeedsValue}"
-                                                Style="{StaticResource InputTextBox}"
+                                                Style="{StaticResource Input.Text}"
+                                                Tag="Value"
                                                 Text="{Binding Value, UpdateSourceTrigger=LostFocus}" />
                                         </DockPanel>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
                             <Button
+                                Margin="0,2,0,0"
                                 HorizontalAlignment="Left"
                                 Command="{Binding AddConditionCommand}"
-                                Content="Add condition"
-                                Style="{StaticResource ActionButton}" />
+                                Style="{StaticResource Button.Plain}">
+                                <StackPanel Orientation="Horizontal">
+                                    <materialDesign:PackIcon
+                                        Width="15"
+                                        Height="15"
+                                        Margin="0,0,5,0"
+                                        VerticalAlignment="Center"
+                                        Kind="PlusCircleOutline" />
+                                    <TextBlock Text="Add condition" />
+                                </StackPanel>
+                            </Button>
+
+                            <!--  THEN  -->
+                            <StackPanel Margin="0,20,0,0" Orientation="Horizontal">
+                                <TextBlock
+                                    Margin="0,0,10,0"
+                                    VerticalAlignment="Center"
+                                    Style="{StaticResource Type.Section}"
+                                    Text="Then suggest" />
+                                <ComboBox
+                                    Width="260"
+                                    AutomationProperties.Name="Door set to suggest"
+                                    DisplayMemberPath="DisplayName"
+                                    ItemsSource="{Binding Definitions}"
+                                    SelectedItem="{Binding TargetSet}"
+                                    Style="{StaticResource Input.Combo}" />
+                            </StackPanel>
                         </StackPanel>
 
-                        <TextBlock Style="{StaticResource SectionCaption}" Text="TEST" />
-                        <DockPanel>
-                            <Button
-                                Command="{Binding TestCommand}"
-                                Content="Test on selected door"
-                                DockPanel.Dock="Left"
-                                Style="{StaticResource ActionButton}" />
-                            <TextBlock
-                                VerticalAlignment="Center"
-                                Style="{StaticResource CaptionText}"
-                                Text="{Binding TestTarget}" />
-                        </DockPanel>
-                        <TextBlock
-                            Margin="0,6,0,0"
-                            Style="{StaticResource BodyText}"
-                            Text="{Binding TestResult}" />
+                        <!--  Test  -->
+                        <Border Margin="0,28,0,0" Style="{StaticResource InsetCard}">
+                            <StackPanel>
+                                <DockPanel>
+                                    <Button
+                                        Command="{Binding TestCommand}"
+                                        DockPanel.Dock="Right"
+                                        Style="{StaticResource Button.Secondary}"
+                                        ToolTip="Evaluate this rule against the door selected on the Doors page">
+                                        <StackPanel Orientation="Horizontal">
+                                            <materialDesign:PackIcon
+                                                Width="15"
+                                                Height="15"
+                                                Margin="0,0,5,0"
+                                                VerticalAlignment="Center"
+                                                Kind="PlayCircleOutline" />
+                                            <TextBlock Text="Test rule" />
+                                        </StackPanel>
+                                    </Button>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Style="{StaticResource Type.Heading}" Text="Try it on a door" />
+                                        <TextBlock Style="{StaticResource Type.Secondary}" Text="{Binding TestTarget}" />
+                                    </StackPanel>
+                                </DockPanel>
+                                <TextBlock
+                                    Margin="0,8,0,0"
+                                    AutomationProperties.LiveSetting="Polite"
+                                    Style="{StaticResource Type.Body}"
+                                    Text="{Binding TestResult}"
+                                    Visibility="{Binding TestResult, Converter={StaticResource NotEmptyToVis}}" />
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
                 </ScrollViewer>
             </Grid>

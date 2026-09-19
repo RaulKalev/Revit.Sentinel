@@ -325,12 +325,16 @@ namespace Sentinel.UI.ViewModels
                     " door set rule(s) or door overrides. Remove it from those first.", null, true);
                 return;
             }
-            if (!_main.Dialogs.Confirm("Delete component", "Delete " + _selected.Name + " from the library?", null, "Delete", "Cancel")) return;
-            Project.ComponentDefinitions.Remove(_selected);
-            _main.MarkDirty("delete component");
-            _selected = null;
-            RefreshList();
-            Selected = Items.FirstOrDefault();
+            var target = _selected;
+            _main.Dialogs.Confirm("Delete component", "Delete " + target.Name + " from the library?", null, "Delete", "Cancel", ok =>
+            {
+                if (!ok || !Project.ComponentDefinitions.Contains(target)) return;
+                Project.ComponentDefinitions.Remove(target);
+                _main.MarkDirty("delete component");
+                _selected = null;
+                RefreshList();
+                Selected = Items.FirstOrDefault();
+            });
         }
 
         public string Error => null;

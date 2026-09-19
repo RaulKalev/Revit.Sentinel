@@ -3,68 +3,105 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+    xmlns:ui="clr-namespace:Sentinel.UI"
     xmlns:views="clr-namespace:Sentinel.UI.Views">
     <UserControl.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="pack://application:,,,/Sentinel;component/UI/Themes/SentinelStyles.xaml" />
+                <ui:SharedDictionary Source="pack://application:,,,/Sentinel;component/UI/Themes/SentinelStyles.xaml" />
             </ResourceDictionary.MergedDictionaries>
+            <Style
+                x:Key="FieldLabel"
+                BasedOn="{StaticResource Type.Label}"
+                TargetType="{x:Type TextBlock}">
+                <Setter Property="Margin" Value="0,0,0,4" />
+            </Style>
         </ResourceDictionary>
     </UserControl.Resources>
 
     <!--  DataContext: ComponentsViewModel  -->
-    <Grid>
+    <Grid Margin="0,0,0,4">
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="280" />
-            <ColumnDefinition Width="10" />
+            <ColumnDefinition Width="260" />
+            <ColumnDefinition Width="12" />
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
-        <Border Style="{StaticResource Panel}">
+        <!--  ===== Library =====  -->
+        <Border Style="{StaticResource Surface}">
             <DockPanel>
-                <TextBlock
-                    Margin="0,0,0,8"
-                    DockPanel.Dock="Top"
-                    Style="{StaticResource PageTitleText}"
-                    Text="Components" />
-                <WrapPanel Margin="0,8,0,0" DockPanel.Dock="Bottom">
-                    <Button
-                        Command="{Binding NewCommand}"
-                        Content="New"
-                        Style="{StaticResource ActionButton}" />
-                    <Button
-                        Command="{Binding DuplicateCommand}"
-                        Content="Duplicate"
-                        Style="{StaticResource ActionButton}" />
-                    <Button
-                        Command="{Binding DeleteCommand}"
-                        Content="Delete"
-                        Style="{StaticResource ActionButton}" />
-                </WrapPanel>
+                <DockPanel Margin="14,12,8,6" DockPanel.Dock="Top">
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                        <Button
+                            AutomationProperties.Name="New component"
+                            Command="{Binding NewCommand}"
+                            Style="{StaticResource Button.Icon}"
+                            ToolTip="New component">
+                            <materialDesign:PackIcon
+                                Width="17"
+                                Height="17"
+                                Kind="Plus" />
+                        </Button>
+                        <Button
+                            AutomationProperties.Name="Duplicate component"
+                            Command="{Binding DuplicateCommand}"
+                            Style="{StaticResource Button.Icon}"
+                            ToolTip="Duplicate the selected component">
+                            <materialDesign:PackIcon
+                                Width="16"
+                                Height="16"
+                                Kind="ContentCopy" />
+                        </Button>
+                        <Button
+                            AutomationProperties.Name="Delete component"
+                            Command="{Binding DeleteCommand}"
+                            Style="{StaticResource Button.Icon}"
+                            ToolTip="Delete the selected component">
+                            <materialDesign:PackIcon
+                                Width="17"
+                                Height="17"
+                                Kind="DeleteOutline" />
+                        </Button>
+                    </StackPanel>
+                    <TextBlock
+                        VerticalAlignment="Center"
+                        Style="{StaticResource Type.Heading}"
+                        Text="Library" />
+                </DockPanel>
                 <ListBox
+                    Margin="6,0,6,6"
+                    AutomationProperties.Name="Components"
                     ItemsSource="{Binding Items}"
                     SelectedItem="{Binding Selected}"
                     Style="{StaticResource MasterList}">
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <DockPanel>
-                                <materialDesign:PackIcon
-                                    Width="14"
-                                    Height="14"
+                                <!--  Missing mapping: glyph + word, not colour alone  -->
+                                <Border
                                     Margin="6,0,0,0"
-                                    VerticalAlignment="Center"
                                     DockPanel.Dock="Right"
-                                    Foreground="{DynamicResource WarningBrush}"
-                                    Kind="AlertOutline"
-                                    ToolTip="Family not configured"
-                                    Visibility="{Binding IsFamilyConfigured, Converter={StaticResource InverseBoolToVis}}" />
+                                    Style="{StaticResource Badge.Error}"
+                                    ToolTip="No Revit family type mapped – components of this kind cannot be placed"
+                                    Visibility="{Binding IsFamilyConfigured, Converter={StaticResource InverseBoolToVis}}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <materialDesign:PackIcon
+                                            Width="11"
+                                            Height="11"
+                                            Margin="0,0,3,0"
+                                            VerticalAlignment="Center"
+                                            Kind="AlertCircleOutline" />
+                                        <TextBlock Text="Unmapped" />
+                                    </StackPanel>
+                                </Border>
                                 <StackPanel>
                                     <TextBlock
                                         FontWeight="SemiBold"
-                                        Style="{StaticResource BodyText}"
-                                        Text="{Binding Name}" />
+                                        Text="{Binding Name}"
+                                        TextTrimming="CharacterEllipsis" />
                                     <TextBlock
-                                        Style="{StaticResource CaptionText}"
+                                        Margin="0,1,0,0"
+                                        Style="{StaticResource Type.Secondary}"
                                         Text="{Binding FamilyDisplay}"
                                         TextTrimming="CharacterEllipsis"
                                         TextWrapping="NoWrap" />
@@ -76,149 +113,174 @@
             </DockPanel>
         </Border>
 
-        <Border
-            Grid.Column="2"
-            Padding="0"
-            Style="{StaticResource Panel}">
+        <!--  ===== Editor =====  -->
+        <Border Grid.Column="2" Style="{StaticResource Surface}">
             <Grid>
-                <TextBlock
+                <StackPanel
                     HorizontalAlignment="Center"
                     VerticalAlignment="Center"
-                    Style="{StaticResource CaptionText}"
-                    Text="Select or create a component."
-                    Visibility="{Binding HasSelection, Converter={StaticResource InverseBoolToVis}}" />
+                    Visibility="{Binding HasSelection, Converter={StaticResource InverseBoolToVis}}">
+                    <materialDesign:PackIcon
+                        Width="34"
+                        Height="34"
+                        HorizontalAlignment="Center"
+                        Foreground="{DynamicResource Text.Tertiary}"
+                        Kind="CardAccountDetailsOutline" />
+                    <TextBlock
+                        Margin="0,10,0,0"
+                        Style="{StaticResource Type.Secondary}"
+                        Text="Select a component, or create one with +." />
+                </StackPanel>
+
                 <ScrollViewer
                     HorizontalScrollBarVisibility="Disabled"
                     VerticalScrollBarVisibility="Auto"
                     Visibility="{Binding HasSelection, Converter={StaticResource BoolToVis}}">
-                    <StackPanel Margin="14,12" IsEnabled="{Binding IsEditable}">
+                    <StackPanel Margin="20,16,20,20" IsEnabled="{Binding IsEditable}">
+                        <!--  Identity  -->
                         <Grid>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="16" />
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="12" />
+                                <ColumnDefinition Width="220" />
                             </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-                            <TextBlock Style="{StaticResource LabelText}" Text="Name" />
-                            <TextBox
-                                Grid.Column="1"
-                                Margin="0,2"
-                                Style="{StaticResource InputTextBox}"
-                                Text="{Binding Name, UpdateSourceTrigger=LostFocus}" />
-                            <TextBlock
-                                Grid.Column="3"
-                                Style="{StaticResource LabelText}"
-                                Text="Category" />
-                            <ComboBox
-                                Grid.Column="4"
-                                Margin="0,2"
-                                DisplayMemberPath="Text"
-                                ItemsSource="{Binding Categories}"
-                                SelectedItem="{Binding Category}"
-                                Style="{StaticResource InputComboBox}" />
-                            <TextBlock
-                                Grid.Row="1"
-                                Style="{StaticResource LabelText}"
-                                Text="Description" />
-                            <TextBox
-                                Grid.Row="1"
-                                Grid.Column="1"
-                                Grid.ColumnSpan="4"
-                                Margin="0,2"
-                                Style="{StaticResource InputTextBox}"
-                                Text="{Binding Description, UpdateSourceTrigger=LostFocus}" />
+                            <StackPanel>
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="Name" />
+                                <TextBox
+                                    AutomationProperties.Name="Name"
+                                    FontWeight="SemiBold"
+                                    Style="{StaticResource Input.Text}"
+                                    Text="{Binding Name, UpdateSourceTrigger=LostFocus}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="Category" />
+                                <ComboBox
+                                    AutomationProperties.Name="Category"
+                                    DisplayMemberPath="Text"
+                                    ItemsSource="{Binding Categories}"
+                                    SelectedItem="{Binding Category}"
+                                    Style="{StaticResource Input.Combo}" />
+                            </StackPanel>
                         </Grid>
+                        <TextBlock
+                            Margin="0,10,0,4"
+                            Style="{StaticResource FieldLabel}"
+                            Text="Description" />
+                        <TextBox
+                            AutomationProperties.Name="Description"
+                            Style="{StaticResource Input.Text}"
+                            Text="{Binding Description, UpdateSourceTrigger=LostFocus}" />
 
                         <!--  Family mapping  -->
-                        <TextBlock Style="{StaticResource SectionCaption}" Text="REVIT FAMILY TYPE" />
-                        <DockPanel>
-                            <materialDesign:PackIcon
-                                Width="16"
-                                Height="16"
-                                Margin="0,0,6,0"
-                                VerticalAlignment="Center"
-                                DockPanel.Dock="Left"
-                                Foreground="{DynamicResource OkBrush}"
-                                Kind="CheckCircleOutline"
-                                Visibility="{Binding MappingIsOk, Converter={StaticResource BoolToVis}}" />
-                            <materialDesign:PackIcon
-                                Width="16"
-                                Height="16"
-                                Margin="0,0,6,0"
-                                VerticalAlignment="Center"
-                                DockPanel.Dock="Left"
-                                Foreground="{DynamicResource WarningBrush}"
-                                Kind="AlertOutline"
-                                Visibility="{Binding MappingIsOk, Converter={StaticResource InverseBoolToVis}}" />
+                        <TextBlock
+                            Margin="0,24,0,10"
+                            Style="{StaticResource Type.Section}"
+                            Text="Revit family type" />
+                        <Border Padding="12,10">
+                            <Border.Style>
+                                <Style TargetType="{x:Type Border}">
+                                    <Setter Property="CornerRadius" Value="8" />
+                                    <Setter Property="BorderThickness" Value="1" />
+                                    <Setter Property="Background" Value="{DynamicResource Status.Ok.Subtle}" />
+                                    <Setter Property="BorderBrush" Value="{DynamicResource Surface.Stroke}" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding MappingIsOk}" Value="False">
+                                            <Setter Property="Background" Value="{DynamicResource Status.Error.Subtle}" />
+                                            <Setter Property="BorderBrush" Value="{DynamicResource Status.Error}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <DockPanel>
+                                <materialDesign:PackIcon
+                                    Width="17"
+                                    Height="17"
+                                    Margin="0,0,10,0"
+                                    VerticalAlignment="Center">
+                                    <materialDesign:PackIcon.Style>
+                                        <Style TargetType="{x:Type materialDesign:PackIcon}">
+                                            <Setter Property="Kind" Value="CheckCircle" />
+                                            <Setter Property="Foreground" Value="{DynamicResource Status.Ok}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding MappingIsOk}" Value="False">
+                                                    <Setter Property="Kind" Value="AlertCircleOutline" />
+                                                    <Setter Property="Foreground" Value="{DynamicResource Status.Error}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </materialDesign:PackIcon.Style>
+                                </materialDesign:PackIcon>
+                                <Button
+                                    Command="{Binding ClearMappingCommand}"
+                                    Content="Clear mapping"
+                                    DockPanel.Dock="Right"
+                                    Style="{StaticResource Button.Plain}" />
+                                <TextBlock
+                                    VerticalAlignment="Center"
+                                    Style="{StaticResource Type.Body}"
+                                    Text="{Binding MappingText}" />
+                            </DockPanel>
+                        </Border>
+
+                        <DockPanel Margin="0,12,0,8">
                             <Button
-                                Command="{Binding ClearMappingCommand}"
-                                Content="Clear"
-                                DockPanel.Dock="Right"
-                                Style="{StaticResource ActionButton}" />
-                            <TextBlock Style="{StaticResource BodyText}" Text="{Binding MappingText}" />
-                        </DockPanel>
-                        <DockPanel Margin="0,8,0,4">
-                            <Button
-                                Margin="6,0,0,0"
+                                Margin="8,0,0,0"
+                                AutomationProperties.Name="Reload families from the model"
                                 Command="{Binding LoadFamiliesCommand}"
-                                Content="Reload families"
                                 DockPanel.Dock="Right"
-                                Style="{StaticResource ActionButton}" />
+                                Style="{StaticResource Button.Icon}"
+                                ToolTip="Reload the family types loaded in the project">
+                                <materialDesign:PackIcon
+                                    Width="17"
+                                    Height="17"
+                                    Kind="Refresh" />
+                            </Button>
                             <CheckBox
-                                Margin="10,0,0,0"
+                                Margin="12,0,0,0"
                                 Content="Show unsupported"
                                 DockPanel.Dock="Right"
                                 IsChecked="{Binding ShowUnsupported}"
-                                Style="{StaticResource InputCheckBox}"
-                                ToolTip="Supported: face-based / work-plane-based and level-based families." />
+                                Style="{StaticResource Input.Check}"
+                                ToolTip="Supported: face-based / work-plane-based and level-based families" />
                             <Grid>
                                 <TextBox
-                                    x:Name="FamilyFilterBox"
-                                    Style="{StaticResource InputTextBox}"
-                                    Text="{Binding FamilyFilter, UpdateSourceTrigger=PropertyChanged}" />
-                                <TextBlock
-                                    Margin="8,0,0,0"
+                                    Padding="30,0,10,0"
+                                    AutomationProperties.Name="Filter family types"
+                                    Style="{StaticResource Input.Text}"
+                                    Tag="Filter by family, type or category"
+                                    Text="{Binding FamilyFilter, UpdateSourceTrigger=PropertyChanged, Delay=150}" />
+                                <materialDesign:PackIcon
+                                    Width="15"
+                                    Height="15"
+                                    Margin="10,0,0,0"
                                     VerticalAlignment="Center"
-                                    FontSize="12"
-                                    Foreground="{DynamicResource IconForegroundBrush}"
+                                    Foreground="{DynamicResource Text.Tertiary}"
                                     IsHitTestVisible="False"
-                                    Text="Filter loaded families (name, type, category)…"
-                                    Visibility="{Binding Text, ElementName=FamilyFilterBox, Converter={StaticResource NotEmptyToVis}, ConverterParameter=invert}" />
+                                    Kind="Magnify" />
                             </Grid>
                         </DockPanel>
-                        <Border
-                            Height="190"
-                            BorderBrush="{DynamicResource BorderBrush}"
-                            BorderThickness="1"
-                            CornerRadius="4">
+                        <Border Height="200" Style="{StaticResource InsetCard}" Padding="4">
                             <ListBox
+                                AutomationProperties.Name="Loaded family types"
                                 IsSynchronizedWithCurrentItem="False"
                                 ItemsSource="{Binding FamilyTypesView}"
                                 SelectedItem="{Binding SelectedFamilyType}"
                                 Style="{StaticResource MasterList}"
-                                VirtualizingPanel.IsVirtualizing="True">
+                                VirtualizingPanel.IsVirtualizing="True"
+                                VirtualizingPanel.VirtualizationMode="Recycling">
                                 <ListBox.ItemTemplate>
                                     <DataTemplate>
                                         <DockPanel>
                                             <TextBlock
-                                                Margin="8,0,0,0"
+                                                Margin="10,0,0,0"
                                                 DockPanel.Dock="Right"
-                                                Style="{StaticResource CaptionText}"
+                                                Style="{StaticResource Type.Caption}"
                                                 Text="{Binding PlacementType}" />
                                             <TextBlock
                                                 DockPanel.Dock="Right"
-                                                Style="{StaticResource CaptionText}"
+                                                Style="{StaticResource Type.Caption}"
                                                 Text="{Binding CategoryName}" />
-                                            <TextBlock
-                                                Style="{StaticResource BodyText}"
-                                                Text="{Binding DisplayName}"
-                                                TextTrimming="CharacterEllipsis"
-                                                TextWrapping="NoWrap" />
+                                            <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
                                         </DockPanel>
                                     </DataTemplate>
                                 </ListBox.ItemTemplate>
@@ -226,99 +288,125 @@
                         </Border>
 
                         <!--  Behaviour  -->
-                        <TextBlock Style="{StaticResource SectionCaption}" Text="PLACEMENT BEHAVIOUR" />
+                        <TextBlock
+                            Margin="0,24,0,10"
+                            Style="{StaticResource Type.Section}"
+                            Text="Placement behaviour" />
                         <Grid>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="16" />
-                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="12" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
-                            <TextBlock Style="{StaticResource LabelText}" Text="Default height (mm)" />
-                            <TextBox
-                                Grid.Column="1"
-                                Margin="0,2"
-                                Style="{StaticResource InputTextBox}"
-                                Text="{Binding DefaultHeight, UpdateSourceTrigger=LostFocus, ValidatesOnDataErrors=True}" />
-                            <TextBlock
-                                Grid.Column="3"
-                                Style="{StaticResource LabelText}"
-                                Text="Hosting" />
-                            <ComboBox
-                                Grid.Column="4"
-                                Margin="0,2"
-                                DisplayMemberPath="Text"
-                                ItemsSource="{Binding HostBehaviors}"
-                                SelectedItem="{Binding HostBehavior}"
-                                Style="{StaticResource InputComboBox}" />
-                            <TextBlock
-                                Grid.Row="1"
-                                Style="{StaticResource LabelText}"
-                                Text="Rotation offset (°)" />
-                            <TextBox
-                                Grid.Row="1"
-                                Grid.Column="1"
-                                Margin="0,2"
-                                Style="{StaticResource InputTextBox}"
-                                Text="{Binding RotationOffset, UpdateSourceTrigger=LostFocus, ValidatesOnDataErrors=True}"
-                                ToolTip="Unhosted families: Sentinel assumes the device front is the family's local -Y axis. Use 180 if the front is +Y." />
-                            <TextBlock
-                                Grid.Row="1"
-                                Grid.Column="3"
-                                Style="{StaticResource LabelText}"
-                                Text="Preview size (mm)" />
-                            <TextBox
-                                Grid.Row="1"
-                                Grid.Column="4"
-                                Margin="0,2"
-                                Style="{StaticResource InputTextBox}"
-                                Text="{Binding PreviewSize, UpdateSourceTrigger=LostFocus, ValidatesOnDataErrors=True}" />
+                            <StackPanel Margin="0,0,0,10">
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="Default height (mm)" />
+                                <TextBox
+                                    AutomationProperties.Name="Default mounting height in millimetres"
+                                    Style="{StaticResource Input.Text}"
+                                    Text="{Binding DefaultHeight, UpdateSourceTrigger=PropertyChanged, Delay=250, ValidatesOnDataErrors=True}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Margin="0,0,0,10">
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="Hosting" />
+                                <ComboBox
+                                    AutomationProperties.Name="Hosting"
+                                    DisplayMemberPath="Text"
+                                    ItemsSource="{Binding HostBehaviors}"
+                                    SelectedItem="{Binding HostBehavior}"
+                                    Style="{StaticResource Input.Combo}" />
+                            </StackPanel>
+                            <StackPanel Grid.Row="1">
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="Rotation offset (°)" />
+                                <TextBox
+                                    AutomationProperties.Name="Rotation offset in degrees"
+                                    Style="{StaticResource Input.Text}"
+                                    Text="{Binding RotationOffset, UpdateSourceTrigger=PropertyChanged, Delay=250, ValidatesOnDataErrors=True}"
+                                    ToolTip="Unhosted families: Sentinel assumes the device front is the family's local -Y axis. Use 180 if the front is +Y." />
+                            </StackPanel>
+                            <StackPanel Grid.Row="1" Grid.Column="2">
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="Preview size (mm)" />
+                                <TextBox
+                                    AutomationProperties.Name="Preview size in millimetres"
+                                    Style="{StaticResource Input.Text}"
+                                    Text="{Binding PreviewSize, UpdateSourceTrigger=PropertyChanged, Delay=250, ValidatesOnDataErrors=True}" />
+                            </StackPanel>
                         </Grid>
 
-                        <TextBlock Style="{StaticResource SectionCaption}" Text="DEFAULT PLACEMENT RULE (used when added to a set)" />
+                        <TextBlock
+                            Margin="0,24,0,4"
+                            Style="{StaticResource Type.Section}"
+                            Text="Default placement" />
+                        <TextBlock
+                            Margin="0,0,0,10"
+                            Style="{StaticResource Type.Secondary}"
+                            Text="Used when this component is added to a set type." />
                         <views:RuleEditorControl DataContext="{Binding DefaultRule}" />
 
-                        <TextBlock Style="{StaticResource SectionCaption}" Text="PARAMETERS WRITTEN ON PLACEMENT" />
-                        <ItemsControl ItemsSource="{Binding Parameters}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <DockPanel Margin="0,0,0,4">
-                                        <Button
-                                            Command="{Binding RemoveCommand}"
-                                            DockPanel.Dock="Right"
-                                            Style="{StaticResource IconButton}"
-                                            ToolTip="Remove">
-                                            <materialDesign:PackIcon Kind="DeleteOutline" />
-                                        </Button>
-                                        <TextBox
-                                            Width="200"
-                                            Margin="0,0,6,0"
-                                            Style="{StaticResource InputTextBox}"
-                                            Text="{Binding Name, UpdateSourceTrigger=LostFocus}"
-                                            ToolTip="Instance parameter name" />
-                                        <TextBox
-                                            Margin="0,0,6,0"
-                                            Style="{StaticResource InputTextBox}"
-                                            Text="{Binding Value, UpdateSourceTrigger=LostFocus}"
-                                            ToolTip="Value (numbers in project units)" />
-                                    </DockPanel>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                        <Button
-                            HorizontalAlignment="Left"
-                            Command="{Binding AddParameterCommand}"
-                            Content="Add parameter"
-                            Style="{StaticResource ActionButton}" />
-                        <TextBlock
-                            Margin="0,8,0,0"
-                            Style="{StaticResource CaptionText}"
-                            Text="{Binding UsageText}" />
+                        <!--  Parameters (progressive disclosure: rarely changed)  -->
+                        <ToggleButton
+                            x:Name="ParamsToggle"
+                            Margin="-4,20,0,6"
+                            Content="Parameters written on placement"
+                            Style="{StaticResource Toggle.Disclosure}" />
+                        <StackPanel Margin="18,0,0,0" Visibility="{Binding IsChecked, ElementName=ParamsToggle, Converter={StaticResource BoolToVis}}">
+                            <ItemsControl Focusable="False" ItemsSource="{Binding Parameters}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <DockPanel Margin="0,0,0,6">
+                                            <Button
+                                                Margin="6,0,0,0"
+                                                AutomationProperties.Name="Remove parameter"
+                                                Command="{Binding RemoveCommand}"
+                                                DockPanel.Dock="Right"
+                                                Style="{StaticResource Button.Icon}"
+                                                ToolTip="Remove parameter">
+                                                <materialDesign:PackIcon Kind="DeleteOutline" />
+                                            </Button>
+                                            <TextBox
+                                                Width="200"
+                                                Margin="0,0,6,0"
+                                                AutomationProperties.Name="Parameter name"
+                                                Style="{StaticResource Input.Text}"
+                                                Tag="Instance parameter"
+                                                Text="{Binding Name, UpdateSourceTrigger=LostFocus}" />
+                                            <TextBox
+                                                AutomationProperties.Name="Parameter value"
+                                                Style="{StaticResource Input.Text}"
+                                                Tag="Value (numbers in project units)"
+                                                Text="{Binding Value, UpdateSourceTrigger=LostFocus}" />
+                                        </DockPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <Button
+                                HorizontalAlignment="Left"
+                                Command="{Binding AddParameterCommand}"
+                                Style="{StaticResource Button.Secondary}">
+                                <StackPanel Orientation="Horizontal">
+                                    <materialDesign:PackIcon
+                                        Width="15"
+                                        Height="15"
+                                        Margin="0,0,5,0"
+                                        VerticalAlignment="Center"
+                                        Kind="Plus" />
+                                    <TextBlock Text="Add parameter" />
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+
+                        <DockPanel Margin="0,16,0,0">
+                            <materialDesign:PackIcon
+                                Width="15"
+                                Height="15"
+                                Margin="0,0,8,0"
+                                VerticalAlignment="Top"
+                                Foreground="{DynamicResource Text.Tertiary}"
+                                Kind="InformationOutline" />
+                            <TextBlock Style="{StaticResource Type.Secondary}" Text="{Binding UsageText}" />
+                        </DockPanel>
                     </StackPanel>
                 </ScrollViewer>
             </Grid>

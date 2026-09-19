@@ -33,6 +33,9 @@ namespace Sentinel.UI.ViewModels
         public string Level { get; private set; }
         public string Rooms { get; private set; }
         public string AccessText { get; private set; }
+
+        /// <summary>Controlled direction ("Corridor → Office") or, without a set, both sides ("Office · Corridor").</summary>
+        public string AccessOrRooms => !string.IsNullOrEmpty(AccessText) ? AccessText : SentinelSession.SideName(Source, true) + "  ·  " + SentinelSession.SideName(Source, false);
         public string SetCode { get; private set; }
         public string SetName { get; private set; }
         public SetStatus Status { get; private set; }

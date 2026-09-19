@@ -59,6 +59,9 @@ namespace Sentinel.UI.ViewModels
             UnignoreCommand = new RelayCommand(Unignore, () => CanEdit && _selectedRows.Any(r => r.Instance != null && r.Instance.IsIgnored));
             ZoomCommand = new RelayCommand(() => Zoom(SelectedRow), () => SelectedRow != null);
             SelectComponentsCommand = new RelayCommand(() => SelectComponents(SelectedRow), () => SelectedRow != null && SelectedRow.HasPlacedElements);
+            ClearSelectionCommand = new RelayCommand(() => SelectKeys(new List<string>()), () => _selectedRows.Count > 0);
+            SelectSourceDoorCommand = new RelayCommand(() => SelectSourceDoor(SelectedRow), () => SelectedRow != null);
+            ToggleInspectorCommand = new RelayCommand(() => IsInspectorVisible = !IsInspectorVisible);
         }
 
         private SentinelSession Session => _main.Session;
@@ -146,12 +149,75 @@ namespace Sentinel.UI.ViewModels
             get => _selectedRow;
             private set
             {
-                if (Set(ref _selectedRow, value)) Inspector.Load(value);
+                if (!Set(ref _selectedRow, value)) return;
+                // While previewing, the workspace stays on the preview door; picking a queued door jumps to it.
+                if (Preview.IsActive)
+                {
+                    if (value?.Instance != null) Preview.TryGoTo(value.Instance.Id);
+                    return;
+                }
+                Inspector.Load(value);
             }
         }
 
         public IReadOnlyList<DoorRowViewModel> SelectedRows => _selectedRows;
         public int SelectedCount => _selectedRows.Count;
+
+        public RelayCommand ClearSelectionCommand { get; }
+        public RelayCommand SelectSourceDoorCommand { get; }
+        public RelayCommand ToggleInspectorCommand { get; }
+
+        // ---- filter counts (shown in the segmented filter) ----
+        public int CountAll { get; private set; }
+        public int CountUnassigned { get; private set; }
+        public int CountReady { get; private set; }
+        public int CountPlaced { get; private set; }
+        public int CountAttention { get; private set; }
+        public int CountIgnored { get; private set; }
+
+        private bool _inspectorVisible = true;
+
+        /// <summary>Review workspace shown next to the grid (the view persists the choice per user).</summary>
+        public bool IsInspectorVisible { get => _inspectorVisible; set => Set(ref _inspectorVisible, value); }
+
+        /// <summary>"3 doors selected" – the scope every action bar command works on.</summary>
+        public string SelectionText =>
+            _selectedRows.Count == 0 ? "No doors selected" :
+            _selectedRows.Count == 1 ? "1 door selected (" + _selectedRows[0].Mark + ")" :
+            _selectedRows.Count + " doors selected";
+
+        public bool HasSelection => _selectedRows.Count > 0;
+
+        private string _primaryAction = "";
+
+        /// <summary>
+        /// The next step for the current selection, which the action bar emphasises:
+        /// "Assign" (unassigned doors), "Review" (sets not placed yet → preview), "Update" (placed sets needing an update).
+        /// </summary>
+        public string PrimaryAction { get => _primaryAction; private set { if (Set(ref _primaryAction, value)) OnPropertiesChanged(nameof(IsAssignPrimary), nameof(IsReviewPrimary), nameof(IsUpdatePrimary)); } }
+        public bool IsAssignPrimary => _primaryAction == "Assign";
+        public bool IsReviewPrimary => _primaryAction == "Review";
+        public bool IsUpdatePrimary => _primaryAction == "Update";
+
+        private void UpdatePrimaryAction()
+        {
+            OnPropertiesChanged(nameof(SelectionText), nameof(HasSelection));
+            if (_selectedRows.Count == 0) { PrimaryAction = ""; return; }
+            if (_selectedRows.Any(r => r.IsAssigned && !r.HasPlacedElements)) { PrimaryAction = "Review"; return; }
+            if (_selectedRows.Any(r => r.IsAssigned && r.HasPlacedElements &&
+                                       (r.Status == SetStatus.Modified || r.Status == SetStatus.MissingComponent ||
+                                        r.Status == SetStatus.SourceChanged || r.Status == SetStatus.Error)))
+            {
+                PrimaryAction = "Update";
+                return;
+            }
+            PrimaryAction = _selectedRows.Any(r => !r.IsAssigned && (r.Instance == null || !r.Instance.IsIgnored)) ? "Assign" : "";
+        }
+
+        private static bool IsAttention(DoorRowViewModel r) =>
+            r.Status == SetStatus.Modified || r.Status == SetStatus.MissingComponent || r.Status == SetStatus.SourceChanged ||
+            r.Status == SetStatus.Orphaned || r.Status == SetStatus.Error ||
+            (r.Instance != null && r.Instance.ReviewState == ReviewState.NeedsReview);
 
         public DoorSetDefinition AssignDefinition { get => _assignDefinition; set => Set(ref _assignDefinition, value); }
 
@@ -392,8 +458,9 @@ namespace Sentinel.UI.ViewModels
         {
             _selectedRows = (rows ?? Enumerable.Empty<DoorRowViewModel>()).Where(r => r != null).ToList();
             SelectedRow = _selectedRows.Count == 1 ? _selectedRows[0] : null;
-            if (_selectedRows.Count != 1) Inspector.Load(null, _selectedRows.Count);
+            if (_selectedRows.Count != 1 && !Preview.IsActive) Inspector.Load(null, _selectedRows.Count);
             OnPropertyChanged(nameof(SelectedCount));
+            UpdatePrimaryAction();
             RelayCommand.Requery();
         }
 
@@ -414,10 +481,7 @@ namespace Sentinel.UI.ViewModels
                 case "Unassigned": return r.Status == SetStatus.Unassigned;
                 case "Ready": return r.Status == SetStatus.Ready || r.Status == SetStatus.Preview;
                 case "Placed": return r.Status == SetStatus.Placed;
-                case "Attention":
-                    return r.Status == SetStatus.Modified || r.Status == SetStatus.MissingComponent || r.Status == SetStatus.SourceChanged ||
-                           r.Status == SetStatus.Orphaned || r.Status == SetStatus.Error ||
-                           (r.Instance != null && r.Instance.ReviewState == ReviewState.NeedsReview);
+                case "Attention": return IsAttention(r);
                 case "Ignored": return r.Status == SetStatus.Ignored;
                 default: return true;
             }
@@ -436,6 +500,14 @@ namespace Sentinel.UI.ViewModels
             }
             int C(SetStatus s) => Rows.Count(r => r.Status == s);
             var attention = C(SetStatus.Modified) + C(SetStatus.MissingComponent) + C(SetStatus.SourceChanged) + C(SetStatus.Orphaned) + C(SetStatus.Error);
+            CountAll = total;
+            CountUnassigned = C(SetStatus.Unassigned);
+            CountReady = C(SetStatus.Ready) + C(SetStatus.Preview);
+            CountPlaced = C(SetStatus.Placed);
+            CountAttention = Rows.Count(r => IsAttention(r));
+            CountIgnored = C(SetStatus.Ignored);
+            OnPropertiesChanged(nameof(CountAll), nameof(CountUnassigned), nameof(CountReady), nameof(CountPlaced), nameof(CountAttention), nameof(CountIgnored));
+            UpdatePrimaryAction();
             Summary = total + " doors • " + C(SetStatus.Unassigned) + " unassigned • " + C(SetStatus.Ready) + " ready • " +
                       C(SetStatus.Placed) + " placed • " + attention + " need attention • showing " + shown;
         }
@@ -483,25 +555,26 @@ namespace Sentinel.UI.ViewModels
             if (placed.Count > 0)
             {
                 var n = placed.Sum(r => r.Instance.Components.Count(c => !string.IsNullOrEmpty(c.ElementUniqueId)));
-                if (!_main.Dialogs.Confirm("Remove door sets",
-                        "Remove the set from " + rows.Count + " door(s)?\n\n" + placed.Count + " of them have placed components; " + n +
-                        " element(s) will be deleted from the model.", null, "Remove and delete", "Cancel"))
-                    return;
-
-                _main.CancelPendingSave();
-                _main.BeginBusy("Deleting components…");
-                _main.Host.DeletePlacedComponents(placed.Select(r => r.Instance.Id).ToList(), true, r =>
-                {
-                    _main.EndBusy();
-                    if (!r.Success)
+                _main.Dialogs.Confirm("Remove door sets",
+                    "Remove the set from " + rows.Count + " door(s)?\n\n" + placed.Count + " of them have placed components; " + n +
+                    " element(s) will be deleted from the model.", null, "Remove and delete " + n + " element(s)", "Cancel", ok =>
                     {
-                        _main.SetStatus(r.Message, true);
-                        UpdateRows();
-                        return;
-                    }
-                    RemoveInstances(rows);
-                    _main.SetStatus("Set removed from " + rows.Count + " door(s); " + r.Message);
-                });
+                        if (!ok) return;
+                        _main.CancelPendingSave();
+                        _main.BeginBusy("Deleting components…");
+                        _main.Host.DeletePlacedComponents(placed.Select(r => r.Instance.Id).ToList(), true, r =>
+                        {
+                            _main.EndBusy();
+                            if (!r.Success)
+                            {
+                                _main.SetStatus(r.Message, true);
+                                UpdateRows();
+                                return;
+                            }
+                            RemoveInstances(rows);
+                            _main.SetStatus("Set removed from " + rows.Count + " door(s); " + r.Message);
+                        });
+                    });
                 return;
             }
             RemoveInstances(rows);
@@ -574,20 +647,22 @@ namespace Sentinel.UI.ViewModels
 
             var details = new StringBuilder();
             foreach (var s in suggestions) details.AppendLine(s.Item1.Mark + " → " + s.Item2.DisplayName + "   (" + s.Item3 + ")");
-            if (!_main.Dialogs.Confirm("Rule suggestions",
-                    suggestions.Count + " of " + candidates.Count + " unassigned door(s) match an assignment rule. Assign the suggested sets?",
-                    details.ToString(), "Assign " + suggestions.Count, "Cancel"))
-                return;
-
-            foreach (var s in suggestions)
-            {
-                var inst = EnsureInstance(s.Item1, s.Item2);
-                DoorSetInstanceOperations.AssignDefinition(inst, s.Item2);
-                inst.Notes = string.IsNullOrWhiteSpace(inst.Notes) ? "Assigned by " + s.Item3 : inst.Notes;
-            }
-            _main.MarkDirty("rule suggestions");
-            UpdateRows();
-            _main.SetStatus(suggestions.Count + " set(s) assigned from rules. Review them before placing.");
+            _main.Dialogs.Confirm("Rule suggestions",
+                suggestions.Count + " of " + candidates.Count + " unassigned door(s) match an assignment rule. Assign the suggested sets?",
+                details.ToString(), "Assign " + suggestions.Count + " set(s)", "Cancel", ok =>
+                {
+                    if (!ok) return;
+                    foreach (var s in suggestions)
+                    {
+                        var inst = EnsureInstance(s.Item1, s.Item2);
+                        if (inst == null) continue;
+                        DoorSetInstanceOperations.AssignDefinition(inst, s.Item2);
+                        inst.Notes = string.IsNullOrWhiteSpace(inst.Notes) ? "Assigned by " + s.Item3 : inst.Notes;
+                    }
+                    _main.MarkDirty("rule suggestions");
+                    UpdateRows();
+                    _main.SetStatus(suggestions.Count + " set(s) assigned from rules. Review them before placing.");
+                });
         }
 
         private void StartPreview()
@@ -617,9 +692,12 @@ namespace Sentinel.UI.ViewModels
                       (alreadyPlaced > 0 ? "\n" + alreadyPlaced + " already placed set(s) are skipped (use Update placement)." : "") +
                       (withErrors.Count > 0 ? "\n\n" + withErrors.Count + " set(s) currently have errors and will fail with the reasons below." : "") +
                       "\n\nEvery placed set stays reviewable and editable afterwards.";
-            if (!_main.Dialogs.Confirm("Place automatically", msg, withErrors.Count > 0 ? details.ToString() : null, "Place", "Cancel")) return;
-
-            RunPlacement(fresh.Select(r => r.Instance.Id).ToList(), PlacementMode.Batch, false, "Placing " + fresh.Count + " door set(s)…", null);
+            var ids = fresh.Select(r => r.Instance.Id).ToList();
+            _main.Dialogs.Confirm("Place automatically", msg, withErrors.Count > 0 ? details.ToString() : null,
+                "Place " + fresh.Count + " set(s)", "Cancel", ok =>
+                {
+                    if (ok) RunPlacement(ids, PlacementMode.Batch, false, "Placing " + ids.Count + " door set(s)…", null);
+                });
         }
 
         public void UpdatePlacement(IEnumerable<DoorRowViewModel> selection, bool allowOverwriteManual)
@@ -652,19 +730,20 @@ namespace Sentinel.UI.ViewModels
                 return;
             }
 
-            var overwrite = false;
-            bool ok;
+            var ids = rows.Select(r => r.Instance.Id).ToList();
             var msg = "Update " + rows.Count + " placed set(s) to their current configuration?" +
                       (manualKept > 0 ? "\n\n" + manualKept + " manually modified component(s) are kept unless you choose to overwrite them." : "") +
                       "\nHosted components that move are re-created.";
+            var yes = "Update " + rows.Count + " set(s)";
+            Action<bool, bool> run = (ok, overwrite) =>
+            {
+                if (ok) RunPlacement(ids, PlacementMode.Update, overwrite, "Updating " + ids.Count + " door set(s)…", null);
+            };
             if (allowOverwriteManual && manualKept > 0)
-                ok = _main.Dialogs.ConfirmWithOption("Update placement", msg, details.ToString(),
-                    "Also move manually modified components back to their calculated position", ref overwrite, "Update", "Cancel");
+                _main.Dialogs.ConfirmWithOption("Update placement", msg, details.ToString(),
+                    "Also move manually modified components back to their calculated position", false, yes, "Cancel", run);
             else
-                ok = _main.Dialogs.Confirm("Update placement", msg, details.ToString(), "Update", "Cancel");
-            if (!ok) return;
-
-            RunPlacement(rows.Select(r => r.Instance.Id).ToList(), PlacementMode.Update, overwrite, "Updating " + rows.Count + " door set(s)…", null);
+                _main.Dialogs.Confirm("Update placement", msg, details.ToString(), yes, "Cancel", ok => run(ok, false));
         }
 
         /// <summary>Runs placement through the host and shows the result summary.</summary>

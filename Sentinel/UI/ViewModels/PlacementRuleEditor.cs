@@ -44,9 +44,32 @@ namespace Sentinel.UI.ViewModels
         public bool DuplicateBoth { get => _duplicateBoth; set { if (Set(ref _duplicateBoth, value)) RaiseEdited(); } }
 
         private bool _loading;
+        private bool _showAdvanced;
+
+        /// <summary>Progressive disclosure: from-wall offset, height reference, orientation, rotation, duplication.</summary>
+        public bool ShowAdvanced { get => _showAdvanced; set => Set(ref _showAdvanced, value); }
+
+        /// <summary>All current field errors as one readable line (shown next to the fields, not only in tooltips).</summary>
+        public string ValidationSummary
+        {
+            get
+            {
+                var parts = new System.Collections.Generic.List<string>();
+                if (this[nameof(AlongWall)] != null) parts.Add("Along wall: " + this[nameof(AlongWall)]);
+                if (this[nameof(FromWall)] != null) parts.Add("From wall: " + this[nameof(FromWall)]);
+                if (this[nameof(Height)] != null) parts.Add("Height: " + this[nameof(Height)]);
+                if (this[nameof(Rotation)] != null) parts.Add("Rotation: " + this[nameof(Rotation)]);
+                return string.Join("  ", parts);
+            }
+        }
+
+        public bool HasErrors => !IsValid;
 
         private void RaiseEdited()
         {
+            OnPropertiesChanged(nameof(ValidationSummary), nameof(HasErrors));
+            // Advanced fields with errors stay visible so the problem is never hidden behind a disclosure.
+            if ((this[nameof(FromWall)] != null || this[nameof(Rotation)] != null) && !ShowAdvanced) ShowAdvanced = true;
             if (!_loading) Edited?.Invoke(this, EventArgs.Empty);
         }
 

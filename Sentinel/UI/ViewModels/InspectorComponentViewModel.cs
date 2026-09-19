@@ -32,6 +32,11 @@ namespace Sentinel.UI.ViewModels
             RuleId = effective.RuleId;
             Label = effective.DisplayLabel;
             ComponentName = effective.Component != null ? effective.Component.Name + " – " + effective.Component.FamilyDisplay : "(missing component definition)";
+            IsFamilyMissing = effective.Component == null || !effective.Component.IsFamilyConfigured;
+            FamilyText = effective.Component == null ? "Component definition missing" :
+                         effective.Component.IsFamilyConfigured ? effective.Component.Name + " · " + effective.Component.FamilyName + " : " + effective.Component.TypeName :
+                         effective.Component.Name + " · no family mapped";
+            Summary = UiChoices.RuleSummary(effective.Rule, effective.Component?.DefaultMountingHeightMm);
             IsAdded = effective.IsAddedByOverride;
             IsOverridden = effective.IsOverridden;
             Explanation = string.Join("\n", slots.Select(s => s.Explanation));
@@ -51,6 +56,13 @@ namespace Sentinel.UI.ViewModels
         public string RuleId { get; }
         public string Label { get; }
         public string ComponentName { get; }
+
+        /// <summary>"Card Reader · Family : Type" or "… · no family mapped".</summary>
+        public string FamilyText { get; }
+        public bool IsFamilyMissing { get; }
+
+        /// <summary>One-line placement summary for the collapsed row.</summary>
+        public string Summary { get; }
         public bool IsAdded { get; }
         public bool IsRemoved { get; }
         public bool IsOverridden { get; }
@@ -84,7 +96,19 @@ namespace Sentinel.UI.ViewModels
         public RelayCommand AcceptManualCommand { get; }
 
         public bool IsEditing { get => _isEditing; private set => Set(ref _isEditing, value); }
-        public PlacementRuleEditor Editor { get; }
+        public PlacementRuleEditor Editor { get; private set; }
+
+        /// <summary>
+        /// Continues an edit that was open before the inspector refreshed: the same editor object keeps the typed
+        /// (possibly invalid, not yet applied) values, validation state and advanced-section state.
+        /// </summary>
+        internal void ResumeEdit(InspectorComponentViewModel previous)
+        {
+            Editor = previous.Editor;
+            EditComponent = previous.EditComponent;
+            IsEditing = true;
+            OnPropertyChanged(nameof(Editor));
+        }
         public List<ComponentDefinition> ComponentChoices => _owner.ProjectData.ComponentDefinitions.OrderBy(c => c.Name).ToList();
         public ComponentDefinition EditComponent { get => _editComponent; set => Set(ref _editComponent, value); }
 

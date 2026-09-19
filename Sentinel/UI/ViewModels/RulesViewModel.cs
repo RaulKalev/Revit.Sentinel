@@ -202,12 +202,16 @@ namespace Sentinel.UI.ViewModels
 
         private void Delete()
         {
-            if (!_main.Dialogs.Confirm("Delete rule", "Delete rule \"" + _selected.Name + "\"?", null, "Delete", "Cancel")) return;
-            Project.AssignmentRules.Remove(_selected);
-            _main.MarkDirty("delete rule");
-            _selected = null;
-            RefreshList();
-            Selected = Rules.FirstOrDefault();
+            var target = _selected;
+            _main.Dialogs.Confirm("Delete rule", "Delete rule \"" + target.Name + "\"?", null, "Delete", "Cancel", ok =>
+            {
+                if (!ok || !Project.AssignmentRules.Contains(target)) return;
+                Project.AssignmentRules.Remove(target);
+                _main.MarkDirty("delete rule");
+                _selected = null;
+                RefreshList();
+                Selected = Rules.FirstOrDefault();
+            });
         }
 
         private void AddCondition()

@@ -52,6 +52,7 @@ namespace Sentinel.UiHarness
         {
             var dispatcher = Dispatcher.CurrentDispatcher;
             ThemeManager.PrefsPath = Path.Combine(_out, "ui-prefs.json"); // never touch the real user preferences
+            Gallery.Dir = Path.Combine(_out, "gallery");
             if (File.Exists(ThemeManager.PrefsPath)) File.Delete(ThemeManager.PrefsPath);
             var host = new FakeSentinelHost(dispatcher);
             var dialogs = new AutoDialogs(_out);
@@ -129,7 +130,33 @@ namespace Sentinel.UiHarness
             Check(Row(doors, "D102").Status == SetStatus.MissingComponent, "refresh keeps Missing Component");
 
             Select(doors, "D102");
+            Check(WorkspaceProbe.WorkspaceOffset(window) == 0, "showing another door starts the review panel at the top");
+            Select(doors, "D102");
             Snap(window, "01_doors_missing_component.png");
+            Gallery.Capture(window, "01_doors_missing_component", true);
+            Gallery.CaptureScaled(window, "01_doors_missing_component", 1.5);
+
+            Select(doors, "D101", "D102", "D103");
+            Gallery.Capture(window, "02_doors_multiselect");
+            Select(doors);
+            Gallery.Capture(window, "03_doors_no_selection_disabled_actions");
+
+            // Validation error in the inspector's component editor (not applied to the model)
+            Select(doors, "D105");
+            var reader105v = doors.Inspector.Components.First(c => c.Label == "Reader");
+            reader105v.EditCommand.Execute(null);
+            Pump();
+            reader105v = doors.Inspector.Components.First(c => c.Label == "Reader");
+            var editOffset = WorkspaceProbe.WorkspaceOffset(window);
+            Check(editOffset > 0, "Adjust scrolls the component editor into view (offset " + editOffset.ToString("0") + ")");
+            reader105v.Editor.AlongWall = "abc";
+            Pump();
+            Check(WorkspaceProbe.WorkspaceOffset(window) == editOffset, "typing an invalid value keeps the edit, its scroll position and shows the error");
+            Gallery.Capture(window, "04_inspector_validation_error");
+            Check(!reader105v.ApplyCommand.CanExecute(null), "invalid override value disables Apply");
+            reader105v.Editor.AlongWall = "350";
+            reader105v.EditCommand.Execute(null);
+            Pump();
 
             // ---------------------------------------------------------------- preview workflow
             Select(doors, "D104", "D120", "D122");
@@ -139,6 +166,7 @@ namespace Sentinel.UiHarness
             var readerBefore = host.LastScene.Doors[0].Placements.First(p => p.Label == "Reader");
             PlanRenderer.Render(host.LastScene, "D104 DS-02 (+Intercom) – before flip", Path.Combine(_out, "02_plan_D104_before_flip.png"));
             Snap(window, "02_preview_D104.png");
+            Gallery.Capture(window, "05_preview", true);
 
             doors.Preview.FlipCommand.Execute(null);
             Pump();
@@ -206,6 +234,7 @@ namespace Sentinel.UiHarness
             main.Rules.Conditions[1].Value = "EI60";
             Pump();
             Snap(window, "07_rules.png");
+            Gallery.Capture(window, "06_rules", true);
             main.CurrentPage = SentinelPage.Doors;
             Pump();
             Select(doors);
@@ -235,9 +264,17 @@ namespace Sentinel.UiHarness
             Pump();
             Check(main.Session.Project.DoorSetDefinitions.First(d => d.Code == "DS-02").Components.First(c => c.Label == "Reader").Rule.MountingHeightMm == 1100,
                 "invalid input is not written to the model");
+            Check(readerRow.IsExpanded, "a set component row with an invalid value opens so the message is visible");
+            Gallery.Capture(window, "07_door_sets_validation_error");
             readerRow.Editor.Height = "";
             Pump();
+            main.DoorSets.Selected = main.Session.Project.DoorSetDefinitions.First(d => d.Code == "DS-01");
+            main.DoorSets.Selected = main.Session.Project.DoorSetDefinitions.First(d => d.Code == "DS-02");
+            Pump();
+            Check(main.DoorSets.Rows.First(r => r.Label == "Reader").IsExpanded && !main.DoorSets.Rows.First(r => r.Label != "Reader").IsExpanded,
+                "expanded set component rows are remembered when the set type is reloaded");
             Snap(window, "08_door_sets.png");
+            Gallery.Capture(window, "08_door_sets", true);
             main.CurrentPage = SentinelPage.Doors;
             Pump();
             doors.UpdateRows();
@@ -247,12 +284,14 @@ namespace Sentinel.UiHarness
             main.Components.Selected = main.Session.Project.ComponentDefinitions.First(c => c.Category == ComponentCategory.Intercom);
             Pump();
             Snap(window, "09_components.png");
+            Gallery.Capture(window, "09_components_unmapped", true);
             main.CurrentPage = SentinelPage.Settings;
             Pump();
             main.Settings.ExportCommand.Execute(null);
             Pump();
             Check(File.Exists(Path.Combine(_out, "Sentinel.sentinel-library.json")), "library export writes a file");
             Snap(window, "10_settings.png");
+            Gallery.Capture(window, "10_settings", true);
 
             main.CurrentPage = SentinelPage.Doors;
             Select(doors, "D104");
@@ -262,13 +301,46 @@ namespace Sentinel.UiHarness
             window.Theme.ToggleTheme();
             Pump();
 
-            // Dialog look
-            var dlg = new SentinelDialog(window.Theme, "Place automatically", "Place 34 door set(s) automatically?\n\n2 set(s) currently have errors and will fail with the reasons below.",
-                "D104: Intercom family not configured (Components page).\nD131: Source door no longer available in the linked model.", "Place", "Cancel", null, false, false);
-            dlg.Show();
+            // In-window sheets (the window's own non-blocking dialog service)
+            bool? sheetAnswer = null;
+            window.Sheets.Confirm("Place 34 door sets without review?",
+                "Components are written to the model for every selected door. 2 sets have errors and will be skipped with the reasons below.",
+                "D104: Intercom family not configured (Components page).\nD131: Source door no longer available in the linked model.",
+                "Place 32 sets", "Cancel", ok => sheetAnswer = ok);
             Pump();
-            SnapElement((FrameworkElement)dlg.Content, "12_dialog.png");
-            dlg.Close();
+            Check(window.Sheets.IsOpen && window.IsSheetShown, "confirmation opens as an in-window sheet (window stays modeless)");
+            Gallery.Capture(window, "11_sheet_confirm", true);
+            window.Sheets.Complete(false);
+            Pump();
+            Check(sheetAnswer == false && !window.Sheets.IsOpen, "sheet Cancel answers false and closes");
+
+            string pathAnswer = "unset";
+            window.Sheets.PromptPath("Export library", "Components, door set types and rules are written to this file.",
+                @"C:\Users\me\Documents\RK Tools\Sentinel\Sentinel.sentinel-library.json", "Export", p => pathAnswer = p);
+            window.Sheets.Show("Import failed", "The file is not a Sentinel library.", "Unexpected character at line 1, position 1.", true);
+            Pump();
+            Gallery.Capture(window, "12_sheet_path");
+            window.Sheets.Complete(true);
+            Pump();
+            Check(pathAnswer != null && pathAnswer.EndsWith("Sentinel.sentinel-library.json") && window.Sheets.IsOpen,
+                "path sheet returns the path; the queued error sheet follows");
+            Gallery.Capture(window, "13_sheet_error");
+            window.Sheets.Complete(true);
+            Pump();
+
+            // Accessibility fallbacks: solid materials (reduced transparency) and high contrast
+            ThemeManager.ForceSolidMaterials = true;
+            window.Theme.ApplyTheme();
+            Pump();
+            Gallery.Capture(window, "14_doors_solid_materials");
+            ThemeManager.ForceSolidMaterials = null;
+            ThemeManager.ForceHighContrast = true;
+            window.Theme.ApplyTheme();
+            Pump();
+            Gallery.Render(window, 1.0, Path.Combine(Gallery.Dir, "15_doors_high_contrast.png"));
+            ThemeManager.ForceHighContrast = null;
+            window.Theme.ApplyTheme();
+            Pump();
 
             // ---------------------------------------------------------------- persistence round trip of the UI-built project
             var project = main.Session.Project;

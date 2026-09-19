@@ -134,47 +134,70 @@ namespace Sentinel.UI.ViewModels
 
         // ------------------------------------------------------------------ library
 
+        /// <summary>Last library path used in this session (prefills the next export/import).</summary>
+        private static string _lastLibraryPath;
+
+        private static string DefaultLibraryPath =>
+            _lastLibraryPath ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                "RK Tools", "Sentinel", "Sentinel.sentinel-library.json");
+
         private void Export()
         {
-            var path = _main.Dialogs.PickSaveFile("Export Sentinel library", "Sentinel library (*.sentinel-library.json)|*.sentinel-library.json|JSON (*.json)|*.json",
-                "Sentinel.sentinel-library.json");
-            if (path == null) return;
-            try
-            {
-                File.WriteAllText(path, LibraryFile.FromProject(Project, Environment.UserName).ToJson());
-                _main.SetStatus("Library exported to " + path + ".");
-            }
-            catch (Exception ex)
-            {
-                _main.Dialogs.Show("Export library", "Export failed: " + ex.Message, null, true);
-            }
+            // Path sheet instead of a modal file dialog: plugin windows must never block Revit (AGENTS.md).
+            _main.Dialogs.PromptPath("Export library",
+                "Save the components, door set types and rules to a JSON file. Door set instances stay in this project.",
+                DefaultLibraryPath, "Export", path =>
+                {
+                    if (path == null) return;
+                    try
+                    {
+                        var dir = Path.GetDirectoryName(path);
+                        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+                        File.WriteAllText(path, LibraryFile.FromProject(Project, Environment.UserName).ToJson());
+                        _lastLibraryPath = path;
+                        _main.SetStatus("Library exported to " + path + ".");
+                    }
+                    catch (Exception ex)
+                    {
+                        _main.Dialogs.Show("Export library", "Export failed: " + ex.Message, null, true);
+                    }
+                });
         }
 
         private void Import()
         {
-            var path = _main.Dialogs.PickOpenFile("Import Sentinel library", "Sentinel library (*.json)|*.json");
-            if (path == null) return;
-            try
-            {
-                var lib = LibraryFile.Parse(File.ReadAllText(path));
-                if (!_main.Dialogs.Confirm("Import library",
+            _main.Dialogs.PromptPath("Import library", "Path of a Sentinel library file (.json) to merge into this project.",
+                DefaultLibraryPath, "Continue", path =>
+                {
+                    if (path == null) return;
+                    LibraryFile lib;
+                    try
+                    {
+                        lib = LibraryFile.Parse(File.ReadAllText(path));
+                        _lastLibraryPath = path;
+                    }
+                    catch (Exception ex)
+                    {
+                        _main.Dialogs.Show("Import library", "Import failed: " + ex.Message, null, true);
+                        return;
+                    }
+                    _main.Dialogs.Confirm("Import library",
                         "Import " + lib.ComponentDefinitions.Count + " component(s), " + lib.DoorSetDefinitions.Count + " door set type(s) and " +
                         lib.AssignmentRules.Count + " rule(s)?\nItems with the same id are replaced; door set instances are not affected.",
-                        null, "Import", "Cancel")) return;
-                var summary = lib.MergeInto(Project);
-                _main.MarkDirty("import library");
-                _main.DoorSets.OnProjectLoaded();
-                _main.Components.OnProjectLoaded();
-                _main.Rules.OnProjectLoaded();
-                _main.Doors.ReloadDefinitions();
-                _main.Doors.UpdateRows();
-                RefreshAll();
-                _main.SetStatus("Library imported. " + summary);
-            }
-            catch (Exception ex)
-            {
-                _main.Dialogs.Show("Import library", "Import failed: " + ex.Message, null, true);
-            }
+                        null, "Import", "Cancel", ok =>
+                        {
+                            if (!ok) return;
+                            var summary = lib.MergeInto(Project);
+                            _main.MarkDirty("import library");
+                            _main.DoorSets.OnProjectLoaded();
+                            _main.Components.OnProjectLoaded();
+                            _main.Rules.OnProjectLoaded();
+                            _main.Doors.ReloadDefinitions();
+                            _main.Doors.UpdateRows();
+                            RefreshAll();
+                            _main.SetStatus("Library imported. " + summary);
+                        });
+                });
         }
 
         private void AddStarterItems()

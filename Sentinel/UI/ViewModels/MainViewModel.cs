@@ -88,7 +88,8 @@ namespace Sentinel.UI.ViewModels
             set
             {
                 if (!Set(ref _page, value)) return;
-                OnPropertiesChanged(nameof(IsDoorsPage), nameof(IsDoorSetsPage), nameof(IsRulesPage), nameof(IsComponentsPage), nameof(IsSettingsPage));
+                OnPropertiesChanged(nameof(IsDoorsPage), nameof(IsDoorSetsPage), nameof(IsRulesPage), nameof(IsComponentsPage), nameof(IsSettingsPage),
+                    nameof(PageTitle), nameof(PageSubtitle));
                 switch (value)
                 {
                     case SentinelPage.Doors: Doors.OnActivated(); break;
@@ -106,11 +107,45 @@ namespace Sentinel.UI.ViewModels
         public bool IsComponentsPage { get => _page == SentinelPage.Components; set { if (value) CurrentPage = SentinelPage.Components; } }
         public bool IsSettingsPage { get => _page == SentinelPage.Settings; set { if (value) CurrentPage = SentinelPage.Settings; } }
 
+        /// <summary>Title area heading for the current page.</summary>
+        public string PageTitle
+        {
+            get
+            {
+                switch (_page)
+                {
+                    case SentinelPage.DoorSets: return "Door Sets";
+                    case SentinelPage.Rules: return "Rules";
+                    case SentinelPage.Components: return "Components";
+                    case SentinelPage.Settings: return "Settings";
+                    default: return "Doors";
+                }
+            }
+        }
+
+        public string PageSubtitle
+        {
+            get
+            {
+                switch (_page)
+                {
+                    case SentinelPage.DoorSets: return "Set types and where their components go";
+                    case SentinelPage.Rules: return "Suggest door sets from door and room properties";
+                    case SentinelPage.Components: return "Component library and Revit family mapping";
+                    case SentinelPage.Settings: return "Defaults, library exchange and stored data";
+                    default: return "Find doors, assign sets, review and place";
+                }
+            }
+        }
+
+        /// <summary>Saved / unsaved / saving / failed – drives the title area glyph.</summary>
+        public bool IsSaveProblem => _saveState == "Save failed" || _saveState == "Unsaved changes";
+
         public string StatusMessage { get => _statusMessage; private set => Set(ref _statusMessage, value); }
         public bool StatusIsError { get => _statusIsError; private set => Set(ref _statusIsError, value); }
         public bool IsBusy { get => _isBusy; private set => Set(ref _isBusy, value); }
         public string BusyText { get => _busyText; private set => Set(ref _busyText, value); }
-        public string SaveState { get => _saveState; private set => Set(ref _saveState, value); }
+        public string SaveState { get => _saveState; private set { if (Set(ref _saveState, value)) OnPropertyChanged(nameof(IsSaveProblem)); } }
 
         /// <summary>Read-only / load warnings banner (null = hidden).</summary>
         public string Banner { get => _banner; private set { Set(ref _banner, value); OnPropertyChanged(nameof(HasBanner)); } }

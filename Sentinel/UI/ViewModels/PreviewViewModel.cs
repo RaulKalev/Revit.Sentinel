@@ -76,7 +76,33 @@ namespace Sentinel.UI.ViewModels
         public bool HasPlanIssues => !string.IsNullOrEmpty(PlanIssuesText);
         public bool CanPlaceCurrent { get; private set; }
         public bool IsAlreadyPlaced { get; private set; }
-        public string ConfirmText => IsAlreadyPlaced ? "Confirm update" : "Confirm";
+        /// <summary>Describes the command result: place (or update) this door, then continue with the next one.</summary>
+        public string ConfirmText => (IsAlreadyPlaced ? "Update" : "Place") + (HasNext ? " and next" : " door set");
+
+        public bool HasNext => _isActive && _index < _queue.Count - 1;
+
+        /// <summary>"Next: D120" – where Confirm and Skip continue.</summary>
+        public string NextHint
+        {
+            get
+            {
+                if (!HasNext) return "Last door in this review";
+                var next = Project.FindInstance(_queue[_index + 1]);
+                return "Next: " + (next?.Source?.DisplayName ?? "door " + (_index + 2));
+            }
+        }
+
+        public string SkipText => HasNext ? "Skip" : "Skip (last)";
+
+        /// <summary>Jumps to a queued door (selecting it in the grid). Returns false if it is not part of this review.</summary>
+        public bool TryGoTo(string instanceId)
+        {
+            if (!_isActive) return false;
+            var i = _queue.IndexOf(instanceId);
+            if (i < 0 || i == _index) return i == _index;
+            Go(i);
+            return true;
+        }
         public ObservableCollection<PreviewPlacementItem> Placements { get; } = new ObservableCollection<PreviewPlacementItem>();
         public ObservableCollection<SetChoice> SetChoices { get; } = new ObservableCollection<SetChoice>();
 
@@ -165,9 +191,9 @@ namespace Sentinel.UI.ViewModels
                 _main.Session.PreviewInstanceIds.Add(inst.Id);
 
                 var src = _main.Session.LiveDoor(inst)?.Current ?? inst.Source;
-                PositionText = "Door " + (_index + 1) + " of " + _queue.Count;
+                PositionText = "Reviewing door " + (_index + 1) + " of " + _queue.Count;
                 DoorTitle = src?.DisplayName;
-                RoomsText = "Side A: " + SentinelSession.SideName(src, true) + "     Side B: " + SentinelSession.SideName(src, false);
+                RoomsText = SentinelSession.SideName(src, true) + "  ·  " + SentinelSession.SideName(src, false);
                 AccessText = SentinelSession.AccessText(src, inst.AccessDirection);
 
                 foreach (var d in Project.DoorSetDefinitions.OrderBy(d => d.Code, StringComparer.OrdinalIgnoreCase))
