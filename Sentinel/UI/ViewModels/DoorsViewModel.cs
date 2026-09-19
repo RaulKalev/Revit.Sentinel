@@ -22,11 +22,22 @@ namespace Sentinel.UI.ViewModels
         public event EventHandler Changed;
     }
 
+    /// <summary>A linked model in the door source list (several can be ticked).</summary>
+    public class LinkOption : ObservableObject
+    {
+        private bool _isChecked;
+        public LinkInfo Link { get; set; }
+        public string UniqueId => Link?.UniqueId;
+        public string DisplayName => Link?.DisplayName;
+        public bool IsLoaded => Link != null && Link.IsLoaded;
+        public bool IsChecked { get => _isChecked; set { if (Set(ref _isChecked, value)) Changed?.Invoke(this, EventArgs.Empty); } }
+        public event EventHandler Changed;
+    }
+
     /// <summary>Doors workspace: discovery, the door grid, bulk actions, inspector and preview.</summary>
     public class DoorsViewModel : ObservableObject
     {
         private readonly MainViewModel _main;
-        private LinkInfo _selectedLink;
         private Option<DiscoveryScope> _selectedScope;
         private string _searchText = "";
         private string _filter = "All";
@@ -46,7 +57,7 @@ namespace Sentinel.UI.ViewModels
             Inspector = new DoorInspectorViewModel(main, this);
             Preview = new PreviewViewModel(main, this);
 
-            FindDoorsCommand = new RelayCommand(FindDoors, () => SelectedLink != null && SelectedLink.IsLoaded && !_main.IsBusy);
+            FindDoorsCommand = new RelayCommand(FindDoors, () => SelectedLinks.Count > 0 && !_main.IsBusy);
             RefreshCommand = new RelayCommand(() => RefreshStatus(null), () => !_main.IsBusy);
             FilterCommand = new RelayCommand(p => ActiveFilter = p as string ?? "All");
             AssignCommand = new RelayCommand(Assign, () => CanEdit && AssignDefinition != null && _selectedRows.Any(r => r.Door != null || r.Instance != null));
@@ -72,7 +83,15 @@ namespace Sentinel.UI.ViewModels
         public DoorInspectorViewModel Inspector { get; }
         public PreviewViewModel Preview { get; }
 
-        public ObservableCollection<LinkInfo> Links { get; } = new ObservableCollection<LinkInfo>();
+        public ObservableCollection<LinkOption> Links { get; } = new ObservableCollection<LinkOption>();
+
+        /// <summary>Ticked, loaded links doors are collected from.</summary>
+        public List<LinkInfo> SelectedLinks => Links.Where(l => l.IsChecked && l.IsLoaded).Select(l => l.Link).ToList();
+
+        private bool _skipWindowTypes;
+
+        /// <summary>Leave out Doors-category elements typed "Window…" (IFC exports).</summary>
+        public bool SkipWindowTypes { get => _skipWindowTypes; set => Set(ref _skipWindowTypes, value); }
         public List<Option<DiscoveryScope>> Scopes => UiChoices.Scopes;
         public ObservableCollection<LevelOption> Levels { get; } = new ObservableCollection<LevelOption>();
         public ObservableCollection<DoorRowViewModel> Rows { get; } = new ObservableCollection<DoorRowViewModel>();
@@ -96,15 +115,24 @@ namespace Sentinel.UI.ViewModels
         /// <summary>Raised after a rebuild so the view can restore the grid selection (keys).</summary>
         public event EventHandler<List<string>> RestoreSelectionRequested;
 
-        public LinkInfo SelectedLink
+        private void OnLinkToggled(object sender, EventArgs e)
         {
-            get => _selectedLink;
-            set
+            OnPropertiesChanged(nameof(SelectedLinks), nameof(SourceText));
+            LoadLevels();
+            RelayCommand.Requery();
+        }
+
+        private void SetLinks(IEnumerable<LinkInfo> links, ICollection<string> checkedIds)
+        {
+            foreach (var old in Links) old.Changed -= OnLinkToggled;
+            Links.Clear();
+            foreach (var l in links)
             {
-                if (!Set(ref _selectedLink, value)) return;
-                OnPropertyChanged(nameof(SourceText));
-                LoadLevels();
+                var o = new LinkOption { Link = l, IsChecked = l.IsLoaded && checkedIds.Contains(l.UniqueId) };
+                o.Changed += OnLinkToggled;
+                Links.Add(o);
             }
+            OnLinkToggled(this, EventArgs.Empty);
         }
 
         public Option<DiscoveryScope> SelectedScope
@@ -128,8 +156,20 @@ namespace Sentinel.UI.ViewModels
         }
 
         /// <summary>Compact description of where doors come from ("ARH_Model.ifc · All linked doors").</summary>
-        public string SourceText =>
-            (_selectedLink?.DisplayName ?? "Choose a linked model") + "  ·  " + (IsLevelScope ? LevelSummary : _selectedScope?.Text ?? "");
+        public string SourceText => LinksText + "  ·  " + (IsLevelScope ? LevelSummary : _selectedScope?.Text ?? "");
+
+        /// <summary>"AR.ifc + SA.ifc", or "3 linked models" when the names would not fit.</summary>
+        private string LinksText
+        {
+            get
+            {
+                var links = SelectedLinks;
+                if (links.Count == 0) return "Choose linked models";
+                if (links.Count == 1) return links[0].DisplayName;
+                var joined = string.Join(" + ", links.Select(l => l.ShortName));
+                return joined.Length <= 48 ? joined : links.Count + " linked models";
+            }
+        }
 
         public string SearchText
         {
@@ -240,6 +280,7 @@ namespace Sentinel.UI.ViewModels
             ReloadDefinitions();
             var s = Project.Settings;
             SelectedScope = UiChoices.Find(UiChoices.Scopes, s.DiscoveryScope) ?? UiChoices.Scopes[0];
+            SkipWindowTypes = s.DiscoverySkipWindowTypes;
             RebuildRows();
         }
 
@@ -256,13 +297,13 @@ namespace Sentinel.UI.ViewModels
             _startedUp = true;
             _main.Host.GetLinks(links =>
             {
-                Links.Clear();
-                foreach (var l in links) Links.Add(l);
-                var stored = Project.Settings.DiscoveryLinkUniqueId;
-                var link = links.FirstOrDefault(l => l.UniqueId == stored && l.IsLoaded)
-                           ?? links.FirstOrDefault(l => l.IsLoaded && l.IsIfc)
-                           ?? links.FirstOrDefault(l => l.IsLoaded);
-                SelectedLink = link;
+                var stored = Project.Settings.GetDiscoveryLinks();
+                var storedLoaded = links.Where(l => l.IsLoaded && stored.Contains(l.UniqueId)).Select(l => l.UniqueId).ToList();
+                var initial = storedLoaded.Count > 0
+                    ? storedLoaded
+                    : new[] { (links.FirstOrDefault(l => l.IsLoaded && l.IsIfc) ?? links.FirstOrDefault(l => l.IsLoaded))?.UniqueId }
+                        .Where(id => id != null).ToList();
+                SetLinks(links, initial);
 
                 if (links.Count == 0)
                 {
@@ -270,9 +311,9 @@ namespace Sentinel.UI.ViewModels
                     if (Project.DoorSetInstances.Count > 0) RefreshStatus(null);
                     return;
                 }
-                if (link != null && !string.IsNullOrEmpty(stored) && link.UniqueId == stored) FindDoors();
+                if (storedLoaded.Count > 0) FindDoors();
                 else if (Project.DoorSetInstances.Count > 0) RefreshStatus(null);
-                else _main.SetStatus("Select the linked model and press Find Doors.");
+                else _main.SetStatus("Choose the linked models next to the page title, then find doors.");
             });
         }
 
@@ -283,18 +324,28 @@ namespace Sentinel.UI.ViewModels
             AssignDefinition = Definitions.FirstOrDefault(d => d.Id == current) ?? Definitions.FirstOrDefault();
         }
 
+        private int _levelRequest;
+
+        /// <summary>Levels of all ticked links (union). Ticked levels survive link changes.</summary>
         private void LoadLevels()
         {
-            Levels.Clear();
-            OnPropertiesChanged(nameof(LevelSummary), nameof(SourceText));
-            if (_selectedLink == null || !_selectedLink.IsLoaded) return;
-            var stored = new HashSet<string>(Project.Settings.DiscoveryLevelNames ?? new List<string>());
-            _main.Host.GetLinkLevels(_selectedLink.UniqueId, names =>
+            var keep = new HashSet<string>(Levels.Where(l => l.IsChecked).Select(l => l.Name));
+            if (keep.Count == 0) keep.UnionWith(Project.Settings.DiscoveryLevelNames ?? new List<string>());
+            var ids = SelectedLinks.Select(l => l.UniqueId).ToList();
+            var request = ++_levelRequest;
+            if (ids.Count == 0)
             {
+                Levels.Clear();
+                OnPropertiesChanged(nameof(LevelSummary), nameof(SourceText));
+                return;
+            }
+            _main.Host.GetLinkLevels(ids, names =>
+            {
+                if (request != _levelRequest) return; // a newer link selection is loading
                 Levels.Clear();
                 foreach (var n in names)
                 {
-                    var lo = new LevelOption { Name = n, IsChecked = stored.Contains(n) };
+                    var lo = new LevelOption { Name = n, IsChecked = keep.Contains(n) };
                     lo.Changed += (s, e) => OnPropertiesChanged(nameof(LevelSummary), nameof(SourceText));
                     Levels.Add(lo);
                 }
@@ -306,10 +357,12 @@ namespace Sentinel.UI.ViewModels
 
         private void FindDoors()
         {
-            if (SelectedLink == null) return;
+            var links = SelectedLinks;
+            if (links.Count == 0) return;
             var req = new DiscoveryRequest
             {
-                LinkUniqueId = SelectedLink.UniqueId,
+                LinkUniqueIds = links.Select(l => l.UniqueId).ToList(),
+                SkipWindowTypes = SkipWindowTypes,
                 Scope = SelectedScope?.Value ?? DiscoveryScope.AllDoors,
                 LevelNames = Levels.Where(l => l.IsChecked).Select(l => l.Name).ToList()
             };
@@ -321,14 +374,15 @@ namespace Sentinel.UI.ViewModels
 
             // Remember the discovery settings with the project.
             var s = Project.Settings;
-            var settingsChanged = s.DiscoveryLinkUniqueId != req.LinkUniqueId || s.DiscoveryScope != req.Scope ||
-                                  !s.DiscoveryLevelNames.SequenceEqual(req.LevelNames);
-            s.DiscoveryLinkUniqueId = req.LinkUniqueId;
+            var settingsChanged = !s.GetDiscoveryLinks().SequenceEqual(req.LinkUniqueIds) || s.DiscoveryScope != req.Scope ||
+                                  !s.DiscoveryLevelNames.SequenceEqual(req.LevelNames) || s.DiscoverySkipWindowTypes != req.SkipWindowTypes;
+            s.SetDiscoveryLinks(req.LinkUniqueIds);
             s.DiscoveryScope = req.Scope;
             s.DiscoveryLevelNames = req.LevelNames;
+            s.DiscoverySkipWindowTypes = req.SkipWindowTypes;
             if (settingsChanged && _main.IsEditable && !_main.Host.IsNewProject) _main.MarkDirty("discovery settings");
 
-            _main.BeginBusy("Finding doors in " + SelectedLink.Name + "…");
+            _main.BeginBusy(links.Count == 1 ? "Finding doors in " + links[0].ShortName + "…" : "Finding doors in " + links.Count + " linked models…");
             _main.Host.DiscoverDoors(req, result =>
             {
                 _main.EndBusy();
@@ -340,10 +394,12 @@ namespace Sentinel.UI.ViewModels
                 Session.DiscoveredDoors = result.Doors;
                 Session.DiscoveryLinkName = result.LinkName;
                 RebuildRows();
-                var msg = result.Doors.Count + " door(s) found in " + result.LinkName + ".";
+                var msg = result.Doors.Count + " door(s) found" +
+                          (result.CountsByLink.Count > 1 ? " (" + string.Join(", ", result.CountsByLink) + ")." : " in " + result.LinkName + ".");
                 if (result.Warnings.Count > 0) msg += " " + string.Join(" ", result.Warnings);
-                _main.SetStatus(msg, false);
-                if (Project.DoorSetInstances.Count > 0) RefreshStatus(null);
+                // The refresh that follows keeps the discovery result in front of its own summary.
+                if (Project.DoorSetInstances.Count > 0) RefreshStatus(null, msg);
+                else _main.SetStatus(msg, false);
             });
         }
 

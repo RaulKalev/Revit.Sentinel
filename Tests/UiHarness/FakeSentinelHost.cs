@@ -20,6 +20,12 @@ namespace Sentinel.UiHarness
         public const string LinkUid = "link-arh";
         private readonly Dispatcher _dispatcher;
         private readonly List<DiscoveredDoor> _doors = new List<DiscoveredDoor>();
+        private readonly List<DiscoveredDoor> _interiorDoors = new List<DiscoveredDoor>();
+
+        /// <summary>Second architecture link (interior), as in projects where doors are split across models.</summary>
+        public const string InteriorLinkUid = "link-sis";
+
+        private IEnumerable<DiscoveredDoor> AllDoors => _doors.Concat(_interiorDoors);
         private readonly HashSet<string> _deletedElements = new HashSet<string>();
         private int _elementCounter = 1000;
 
@@ -71,24 +77,31 @@ namespace Sentinel.UiHarness
             var f = Vec3.UnitY.RotateAboutZ(30);
             AddDoor("D130", new Vec3(30000, 3000, 0), f, Vec3.UnitX.RotateAboutZ(30), "1.30 Meeting", "1.00 Corridor", "", DoorGeometrySource.FamilyInstance);
             AddDoor("D131", new Vec3(33000, 3000, 3600), Vec3.UnitY, Vec3.UnitX, "2.01 Office", "2.00 Lobby", "", DoorGeometrySource.FamilyInstance, "Level 2");
+
+            // Interior link: one door modelled in both links (same opening as D103), two interior-only doors and a
+            // window exported into the Doors category.
+            AddDoor("SKU13", new Vec3(9080, 1540, 0), Vec3.UnitY, Vec3.UnitX, "1.03 Office", "1.00 Corridor", "", DoorGeometrySource.EstimatedFromGeometry, interior: true);
+            AddDoor("SKU20", new Vec3(20000, 6000, 0), Vec3.UnitY, Vec3.UnitX, "1.40 Kitchen", "1.41 Store", "", DoorGeometrySource.EstimatedFromGeometry, interior: true);
+            AddDoor("SKU21", new Vec3(23000, 6000, 0), Vec3.UnitY, Vec3.UnitX, "1.42 Toilet", "1.40 Kitchen", "", DoorGeometrySource.EstimatedFromGeometry, interior: true);
+            AddDoor("SW1", new Vec3(26000, 6000, 0), Vec3.UnitY, Vec3.UnitX, "1.43 Office", "1.40 Kitchen", "", DoorGeometrySource.EstimatedFromGeometry, interior: true, typeName: "Window 27");
         }
 
         private void AddDoor(string mark, Vec3 origin, Vec3 facing, Vec3 width, string roomA, string roomB, string fire,
-            DoorGeometrySource source, string level = "Level 1")
+            DoorGeometrySource source, string level = "Level 1", bool interior = false, string typeName = null)
         {
             var d = new DiscoveredDoor
             {
                 Current = new SourceDoorReference
                 {
-                    LinkInstanceUniqueId = LinkUid,
-                    LinkName = "ARH_Model.ifc",
-                    LinkDocumentTitle = "ARH_Model.ifc",
+                    LinkInstanceUniqueId = interior ? InteriorLinkUid : LinkUid,
+                    LinkName = interior ? "SIS_Model.ifc : 2" : "ARH_Model.ifc",
+                    LinkDocumentTitle = interior ? "SIS_Model.ifc" : "ARH_Model.ifc",
                     DoorUniqueId = "door-" + mark,
-                    DoorElementId = 400000 + _doors.Count,
+                    DoorElementId = 400000 + _doors.Count + _interiorDoors.Count,
                     IfcGlobalId = "3" + mark + "x$Ab12CdEfGhIjKl".Substring(0, 12),
                     Mark = mark,
                     FamilyName = source == DoorGeometrySource.FamilyInstance ? "M_Single-Flush" : null,
-                    TypeName = source == DoorGeometrySource.FamilyInstance ? "1000 x 2100mm" : "IfcDoor Single Swing",
+                    TypeName = typeName ?? (source == DoorGeometrySource.FamilyInstance ? "1000 x 2100mm" : "IfcDoor Single Swing"),
                     LevelName = level,
                     SideARoom = roomA,
                     SideBRoom = roomB,
@@ -111,10 +124,10 @@ namespace Sentinel.UiHarness
                 }
             };
             if (source == DoorGeometrySource.EstimatedFromGeometry) d.ReadWarnings.Add("Door orientation estimated from geometry; hinge side unknown.");
-            _doors.Add(d);
+            (interior ? _interiorDoors : _doors).Add(d);
         }
 
-        public DiscoveredDoor Door(string mark) => _doors.First(d => d.Current.Mark == mark);
+        public DiscoveredDoor Door(string mark) => AllDoors.First(d => d.Current.Mark == mark);
 
         /// <summary>Simulates a change in the linked model (door moved).</summary>
         public void MoveDoor(string mark, Vec3 delta)
@@ -148,20 +161,42 @@ namespace Sentinel.UiHarness
         public void GetLinks(Action<IList<LinkInfo>> done) => Post(() => done(new List<LinkInfo>
         {
             new LinkInfo { UniqueId = LinkUid, Name = "ARH_Model.ifc", DocumentTitle = "ARH_Model.ifc", IsIfc = true, IsLoaded = true },
+            new LinkInfo { UniqueId = InteriorLinkUid, Name = "SIS_Model.ifc : 2", DocumentTitle = "SIS_Model.ifc", IsIfc = true, IsLoaded = true },
             new LinkInfo { UniqueId = "link-rkv", Name = "RKV_Model.rvt", DocumentTitle = "RKV_Model", IsIfc = false, IsLoaded = false }
         }));
 
-        public void GetLinkLevels(string linkUniqueId, Action<IList<string>> done) =>
+        public void GetLinkLevels(IList<string> linkUniqueIds, Action<IList<string>> done) =>
             Post(() => done(new List<string> { "Level 1", "Level 2", "Roof" }));
 
         public void DiscoverDoors(DiscoveryRequest request, Action<DiscoveryResult> done)
         {
-            var doors = _doors.Where(d => request.Scope != DiscoveryScope.SelectedLevels || request.LevelNames.Contains(d.Current.LevelName))
-                .Select(d => new DiscoveredDoor { Current = d.Current.Clone(), ReadWarnings = d.ReadWarnings.ToList() }).ToList();
-            var r = new DiscoveryResult { Success = true, LinkName = "ARH_Model.ifc", Doors = doors };
-            if (doors.Any(d => d.Geometry.Source == DoorGeometrySource.EstimatedFromGeometry))
-                r.Warnings.Add(doors.Count(d => d.Geometry.Source == DoorGeometrySource.EstimatedFromGeometry) + " door(s) use estimated IFC geometry (hinge side unknown).");
-            Log.Add("DISCOVER " + request.Scope + " → " + doors.Count);
+            var r = new DiscoveryResult { Success = true };
+            var names = new List<string>();
+            foreach (var uid in request.LinkUniqueIds)
+            {
+                var source = uid == LinkUid ? _doors : uid == InteriorLinkUid ? _interiorDoors : null;
+                if (source == null) { r.Warnings.Add("\"" + uid + "\" is not loaded."); continue; }
+                var name = uid == LinkUid ? "ARH_Model.ifc" : "SIS_Model.ifc";
+                names.Add(name);
+                var found = source.Where(d => request.Scope != DiscoveryScope.SelectedLevels || request.LevelNames.Contains(d.Current.LevelName)).ToList();
+                if (request.SkipWindowTypes)
+                {
+                    var before = found.Count;
+                    found = found.Where(d => !(d.Current.TypeName ?? "").StartsWith("Window", StringComparison.OrdinalIgnoreCase)).ToList();
+                    r.SkippedWindowTypes += before - found.Count;
+                }
+                r.Doors.AddRange(found.Select(d => new DiscoveredDoor { Current = d.Current.Clone(), ReadWarnings = d.ReadWarnings.ToList() }));
+                r.CountsByLink.Add(name + ": " + found.Count);
+            }
+            if (names.Count == 0) { Post(() => done(new DiscoveryResult { Error = "Select at least one linked model first." })); return; }
+            r.LinkName = string.Join(" + ", names);
+            r.PossibleDuplicates = CrossLinkDuplicates.Mark(r.Doors);
+            foreach (var d in r.Doors.Where(x => x.PossibleDuplicateOf != null)) d.ReadWarnings.Add("Probably the same door as " + d.PossibleDuplicateOf + ".");
+            if (r.SkippedWindowTypes > 0) r.Warnings.Add(r.SkippedWindowTypes + " window type(s) in the Doors category were left out.");
+            if (r.PossibleDuplicates > 0) r.Warnings.Add(r.PossibleDuplicates + " door(s) appear in more than one link.");
+            var estimated = r.Doors.Count(d => d.Geometry.Source == DoorGeometrySource.EstimatedFromGeometry);
+            if (estimated > 0) r.Warnings.Add(estimated + " door(s) use estimated IFC geometry (hinge side unknown).");
+            Log.Add("DISCOVER " + request.Scope + " [" + string.Join(",", request.LinkUniqueIds) + "] → " + r.Doors.Count);
             Post(() => done(r));
         }
 
@@ -171,7 +206,7 @@ namespace Sentinel.UiHarness
             foreach (var inst in Project.DoorSetInstances)
             {
                 var check = new SourceCheck { InstanceId = inst.Id };
-                var door = _doors.FirstOrDefault(d => d.Key == inst.Source.Key);
+                var door = AllDoors.FirstOrDefault(d => d.Key == inst.Source.Key);
                 if (door == null) check.State = SourceState.Missing;
                 else
                 {
@@ -213,7 +248,7 @@ namespace Sentinel.UiHarness
                 var inst = Project.FindInstance(id);
                 var result = new PlacementDoorResult { InstanceId = id, DoorName = inst?.Source?.DisplayName };
                 batch.Doors.Add(result);
-                var door = inst != null ? _doors.FirstOrDefault(d => d.Key == inst.Source.Key) : null;
+                var door = inst != null ? AllDoors.FirstOrDefault(d => d.Key == inst.Source.Key) : null;
                 if (inst == null || door == null)
                 {
                     result.Outcome = PlacementOutcome.Failed;

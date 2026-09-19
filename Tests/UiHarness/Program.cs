@@ -307,7 +307,34 @@ namespace Sentinel.UiHarness
             window.Theme.ToggleTheme();
             Pump();
 
-            // Door source popover (link, scope, Find doors) in both themes
+            // ---------------------------------------------------------------- multi-link discovery
+            Check(doors.SelectedLinks.Count == 1 && doors.SelectedLinks[0].UniqueId == FakeSentinelHost.LinkUid,
+                "the single source link stored by older versions is restored");
+            doors.Links.First(l => l.UniqueId == FakeSentinelHost.InteriorLinkUid).IsChecked = true;
+            Pump();
+            Check(doors.SourceText.StartsWith("ARH_Model.ifc + SIS_Model.ifc"), "source text names both links: " + doors.SourceText);
+            doors.FindDoorsCommand.Execute(null);
+            Pump(30);
+            Check(doors.Rows.Count(r => r.Door != null) == host.Doors.Count + 4, "doors of both links are listed (" + main.StatusMessage + ")");
+            Check(main.StatusMessage.Contains("ARH_Model.ifc: ") && main.StatusMessage.Contains("SIS_Model.ifc: 4"), "status reports doors per link");
+            Check(Row(doors, "SKU13").Reason.StartsWith("Probably the same door as D103"), "a door modelled in both links is flagged: " + Row(doors, "SKU13").Reason);
+            Check(Row(doors, "SKU20").Reason == "", "interior-only doors are not flagged");
+            Check(main.Session.Project.Settings.GetDiscoveryLinks().SequenceEqual(new[] { FakeSentinelHost.LinkUid, FakeSentinelHost.InteriorLinkUid }),
+                "both source links are saved with the project");
+            doors.SkipWindowTypes = true;
+            doors.FindDoorsCommand.Execute(null);
+            Pump(30);
+            Check(doors.Rows.All(r => r.Mark != "SW1") && main.StatusMessage.Contains("1 window type(s)"), "window types in the Doors category can be left out");
+            Check(main.Session.Project.Settings.DiscoverySkipWindowTypes, "the window option is saved with the project");
+            Select(doors, "SKU13");
+            Check(doors.Inspector.Subtitle.Contains("SIS_Model.ifc") && !doors.Inspector.Subtitle.Contains(" : 2"),
+                "the review panel names the door's link: " + doors.Inspector.Subtitle);
+            Check(doors.Inspector.Issues.Any(i => i.Message.StartsWith("Probably the same door as D103 in ARH_Model.ifc")),
+                "the review panel explains the possible duplicate");
+            Gallery.Capture(window, "18_doors_two_links");
+            Select(doors, "D104");
+
+            // Door source popover (links, scope, Find doors) in both themes
             foreach (var dark in new[] { true, false })
             {
                 if (window.Theme.IsDarkMode != dark) window.Theme.ToggleTheme();

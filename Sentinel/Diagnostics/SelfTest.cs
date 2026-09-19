@@ -130,7 +130,7 @@ namespace Sentinel.Diagnostics
 
             var links = DoorDiscoveryService.GetLinks(host);
             Check(links.Count == 1 && links[0].IsLoaded, "link listed and loaded");
-            var discovery = DoorDiscoveryService.Discover(host, null, new DiscoveryRequest { LinkUniqueId = links[0].UniqueId, Scope = DiscoveryScope.AllDoors }, project.Settings);
+            var discovery = DoorDiscoveryService.Discover(host, null, new DiscoveryRequest { LinkUniqueIds = { links[0].UniqueId }, Scope = DiscoveryScope.AllDoors }, project.Settings);
             Check(discovery.Success && discovery.Doors.Count == 4, "discovery finds the 4 linked doors (" + discovery.Doors.Count + ")");
             foreach (var d in discovery.Doors.OrderBy(d => d.Current.Mark))
             {

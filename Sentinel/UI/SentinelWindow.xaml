@@ -446,17 +446,30 @@
                                         Style="{StaticResource Type.Secondary}"
                                         Text="Doors are read from a linked model. The link itself is never changed." />
                                     <TextBlock
-                                        Margin="0,0,0,4"
+                                        Margin="0,0,0,2"
                                         Style="{StaticResource Type.Label}"
-                                        Text="Linked model" />
-                                    <Border Padding="2" Style="{StaticResource InsetCard}">
-                                        <ListBox
-                                            MaxHeight="132"
-                                            AutomationProperties.Name="Linked model"
-                                            DisplayMemberPath="DisplayName"
-                                            ItemsSource="{Binding Links}"
-                                            SelectedItem="{Binding SelectedLink}"
-                                            Style="{StaticResource MasterList}" />
+                                        Text="Linked models" />
+                                    <TextBlock
+                                        Margin="0,0,0,6"
+                                        Style="{StaticResource Type.Caption}"
+                                        Text="Tick every model that contains doors, for example the shell and the interior architecture." />
+                                    <Border Padding="10,6" Style="{StaticResource InsetCard}">
+                                        <ScrollViewer MaxHeight="168" VerticalScrollBarVisibility="Auto">
+                                            <ItemsControl AutomationProperties.Name="Linked models" ItemsSource="{Binding Links}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <CheckBox
+                                                            Margin="0,3"
+                                                            IsChecked="{Binding IsChecked}"
+                                                            IsEnabled="{Binding IsLoaded}"
+                                                            Style="{StaticResource Input.Check}"
+                                                            ToolTip="{Binding DisplayName}">
+                                                            <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
+                                                        </CheckBox>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </ScrollViewer>
                                     </Border>
                                     <TextBlock
                                         Margin="0,12,0,4"
@@ -489,6 +502,12 @@
                                             </ItemsControl>
                                         </ScrollViewer>
                                     </StackPanel>
+                                    <CheckBox
+                                        Margin="0,12,0,0"
+                                        Content="Leave out window types"
+                                        IsChecked="{Binding SkipWindowTypes}"
+                                        Style="{StaticResource Input.Check}"
+                                        ToolTip="Some IFC exports put windows in the Doors category (types named 'Window …'). Tick to leave them out." />
                                     <Button
                                         Margin="0,16,0,0"
                                         HorizontalAlignment="Stretch"

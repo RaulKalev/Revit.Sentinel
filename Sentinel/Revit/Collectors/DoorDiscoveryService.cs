@@ -41,93 +41,144 @@ namespace Sentinel.Revit.Collectors
                 .ToList();
         }
 
-        public static List<string> GetLevels(Document doc, string linkUniqueId)
+        public static List<string> GetLevels(Document doc, IEnumerable<string> linkUniqueIds)
         {
-            var link = doc.GetElement(linkUniqueId) as RevitLinkInstance;
-            var ld = link?.GetLinkDocument();
-            if (ld == null) return new List<string>();
-            return new FilteredElementCollector(ld).OfClass(typeof(Level)).Cast<Level>()
-                .OrderBy(l => l.Elevation).Select(l => l.Name).ToList();
+            // Union across links, ordered by elevation (the first link that has a level decides its position).
+            var byName = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+            foreach (var uid in linkUniqueIds ?? Enumerable.Empty<string>())
+            {
+                var link = doc.GetElement(uid ?? "") as RevitLinkInstance;
+                var ld = link?.GetLinkDocument();
+                if (ld == null) continue;
+                foreach (var l in new FilteredElementCollector(ld).OfClass(typeof(Level)).Cast<Level>())
+                    if (!byName.ContainsKey(l.Name)) byName[l.Name] = l.Elevation;
+            }
+            return byName.OrderBy(kv => kv.Value).Select(kv => kv.Key).ToList();
         }
 
+        /// <summary>
+        /// Collects doors from every requested link. Unloaded or removed links are reported as warnings; the call
+        /// only fails when none of the links can be read. Doors that appear in more than one link are marked.
+        /// </summary>
         public static DiscoveryResult Discover(Document doc, View activeView, DiscoveryRequest req, SentinelSettings settings)
         {
             var result = new DiscoveryResult();
-            var link = doc.GetElement(req.LinkUniqueId ?? "") as RevitLinkInstance;
-            if (link == null)
+            var linkIds = (req.LinkUniqueIds ?? new List<string>()).Where(s => !string.IsNullOrEmpty(s)).Distinct().ToList();
+            if (linkIds.Count == 0)
             {
-                result.Error = "Select a linked model first.";
+                result.Error = "Select at least one linked model first.";
                 return result;
             }
-            var linkDoc = link.GetLinkDocument();
-            if (linkDoc == null)
-            {
-                result.Error = "The linked model \"" + link.Name + "\" is not loaded.";
-                return result;
-            }
-            result.LinkName = link.Name;
 
-            IList<Element> doors;
-            if (req.Scope == DiscoveryScope.ActiveView && activeView != null)
-            {
-                try
-                {
-                    // Linked elements visible in the host view (Revit 2024+, see RevitCompat).
-                    doors = new FilteredElementCollector(doc, activeView.Id, link.Id)
-                        .OfCategory(BuiltInCategory.OST_Doors)
-                        .WhereElementIsNotElementType()
-                        .ToElements();
-                }
-                catch (Exception ex)
-                {
-                    result.Warnings.Add("Current-view scope is not available for view \"" + activeView.Name + "\" (" + ex.Message + "); all doors were collected.");
-                    doors = AllDoors(linkDoc);
-                }
-            }
-            else
-            {
-                doors = AllDoors(linkDoc);
-            }
-
-            if (req.Scope == DiscoveryScope.SelectedLevels && req.LevelNames != null && req.LevelNames.Count > 0)
-            {
-                var levelIds = new HashSet<long>(new FilteredElementCollector(linkDoc).OfClass(typeof(Level)).Cast<Level>()
-                    .Where(l => req.LevelNames.Contains(l.Name)).Select(l => RevitCompat.IdValue(l.Id)));
-                var reader0 = new DoorReader(doc, link, settings);
-                doors = doors.Where(d =>
-                {
-                    if (RevitCompat.IsValid(d.LevelId)) return levelIds.Contains(RevitCompat.IdValue(d.LevelId));
-                    // IFC elements without LevelId: fall back to the computed level name.
-                    var dd = reader0.Read(d);
-                    return dd.Current.LevelName != null && req.LevelNames.Contains(dd.Current.LevelName);
-                }).ToList();
-            }
-
-            var reader = new DoorReader(doc, link, settings);
+            var names = new List<string>();
             var failed = 0;
-            foreach (var d in doors)
+            foreach (var uid in linkIds)
             {
-                try
+                var link = doc.GetElement(uid) as RevitLinkInstance;
+                if (link == null)
                 {
-                    var dd = reader.Read(d);
-                    result.Doors.Add(dd);
+                    result.Warnings.Add("A selected linked model is no longer in the project.");
+                    continue;
                 }
-                catch (Exception ex)
+                var linkDoc = link.GetLinkDocument();
+                if (linkDoc == null)
                 {
-                    failed++;
-                    SentinelLog.Error("Reading door " + d.UniqueId + " failed", ex);
+                    result.Warnings.Add("\"" + link.Name + "\" is not loaded.");
+                    continue;
                 }
-            }
-            if (failed > 0) result.Warnings.Add(failed + " door(s) could not be read (see log).");
+                names.Add(LinkInfo.Short(link.Name));
 
+                var doors = CollectDoors(doc, activeView, link, linkDoc, req, result.Warnings);
+                if (req.SkipWindowTypes)
+                {
+                    var before = doors.Count;
+                    doors = doors.Where(d => !IsWindowType(linkDoc, d)).ToList();
+                    result.SkippedWindowTypes += before - doors.Count;
+                }
+
+                var reader = new DoorReader(doc, link, settings);
+                if (req.Scope == DiscoveryScope.SelectedLevels && req.LevelNames != null && req.LevelNames.Count > 0)
+                {
+                    var levelIds = new HashSet<long>(new FilteredElementCollector(linkDoc).OfClass(typeof(Level)).Cast<Level>()
+                        .Where(l => req.LevelNames.Contains(l.Name)).Select(l => RevitCompat.IdValue(l.Id)));
+                    doors = doors.Where(d =>
+                    {
+                        if (RevitCompat.IsValid(d.LevelId)) return levelIds.Contains(RevitCompat.IdValue(d.LevelId));
+                        // IFC elements without LevelId: fall back to the computed level name.
+                        var dd = reader.Read(d);
+                        return dd.Current.LevelName != null && req.LevelNames.Contains(dd.Current.LevelName);
+                    }).ToList();
+                }
+
+                var count = 0;
+                foreach (var d in doors)
+                {
+                    try
+                    {
+                        result.Doors.Add(reader.Read(d));
+                        count++;
+                    }
+                    catch (Exception ex)
+                    {
+                        failed++;
+                        SentinelLog.Error("Reading door " + d.UniqueId + " failed", ex);
+                    }
+                }
+                result.CountsByLink.Add(LinkInfo.Short(link.Name) + ": " + count);
+                SentinelLog.Info("Discovered " + count + " door(s) in " + link.Name + " (" + req.Scope + ").");
+            }
+
+            if (names.Count == 0)
+            {
+                result.Error = result.Warnings.Count > 0 ? string.Join(" ", result.Warnings) : "The selected linked models could not be read.";
+                return result;
+            }
+            result.LinkName = string.Join(" + ", names);
+
+            result.PossibleDuplicates = CrossLinkDuplicates.Mark(result.Doors);
+            foreach (var d in result.Doors.Where(x => x.PossibleDuplicateOf != null))
+                d.ReadWarnings.Add("Probably the same door as " + d.PossibleDuplicateOf + ".");
+
+            if (failed > 0) result.Warnings.Add(failed + " door(s) could not be read (see log).");
+            if (result.SkippedWindowTypes > 0) result.Warnings.Add(result.SkippedWindowTypes + " window type(s) in the Doors category were left out.");
+            if (result.PossibleDuplicates > 0) result.Warnings.Add(result.PossibleDuplicates + " door(s) appear in more than one link.");
             var noGeometry = result.Doors.Count(x => x.Geometry == null || !x.Geometry.IsValid);
             if (noGeometry > 0) result.Warnings.Add(noGeometry + " door(s) have unsupported geometry.");
             var estimated = result.Doors.Count(x => x.Geometry != null && x.Geometry.Source == DoorGeometrySource.EstimatedFromGeometry);
             if (estimated > 0) result.Warnings.Add(estimated + " door(s) use estimated IFC geometry (hinge side unknown).");
 
             result.Success = true;
-            SentinelLog.Info("Discovered " + result.Doors.Count + " door(s) in " + link.Name + " (" + req.Scope + ").");
             return result;
+        }
+
+        private static List<Element> CollectDoors(Document doc, View activeView, RevitLinkInstance link, Document linkDoc,
+            DiscoveryRequest req, List<string> warnings)
+        {
+            if (req.Scope == DiscoveryScope.ActiveView && activeView != null)
+            {
+                try
+                {
+                    // Linked elements visible in the host view (Revit 2024+, see RevitCompat).
+                    return new FilteredElementCollector(doc, activeView.Id, link.Id)
+                        .OfCategory(BuiltInCategory.OST_Doors)
+                        .WhereElementIsNotElementType()
+                        .ToElements()
+                        .ToList();
+                }
+                catch (Exception ex)
+                {
+                    warnings.Add("Current-view scope is not available for view \"" + activeView.Name + "\" (" + ex.Message + "); all doors of " + link.Name + " were collected.");
+                }
+            }
+            return AllDoors(linkDoc).ToList();
+        }
+
+        /// <summary>IFC exports sometimes put windows in the Doors category ("Window 27", Estonian "Aken").</summary>
+        private static bool IsWindowType(Document linkDoc, Element door)
+        {
+            var typeName = (linkDoc.GetElement(door.GetTypeId())?.Name ?? "").TrimStart();
+            return typeName.StartsWith("Window", StringComparison.OrdinalIgnoreCase) ||
+                   typeName.StartsWith("Aken", StringComparison.OrdinalIgnoreCase);
         }
 
         private static IList<Element> AllDoors(Document linkDoc) =>

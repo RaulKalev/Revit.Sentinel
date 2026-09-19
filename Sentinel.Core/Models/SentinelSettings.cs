@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Sentinel.Core.Models
 {
@@ -13,7 +14,29 @@ namespace Sentinel.Core.Models
     public class SentinelSettings
     {
         // ---- discovery ----
+        /// <summary>First source link (kept for projects saved by versions that read a single link).</summary>
         public string DiscoveryLinkUniqueId { get; set; }
+
+        /// <summary>Linked models doors are collected from (architecture is often split, e.g. shell + interior).</summary>
+        public List<string> DiscoveryLinkUniqueIds { get; set; } = new List<string>();
+
+        /// <summary>Leave out elements in the Doors category whose type name starts with "Window" (IFC exports).</summary>
+        public bool DiscoverySkipWindowTypes { get; set; }
+
+        /// <summary>Source links, falling back to the single link stored by older versions.</summary>
+        public List<string> GetDiscoveryLinks()
+        {
+            var list = (DiscoveryLinkUniqueIds ?? new List<string>()).Where(s => !string.IsNullOrEmpty(s)).Distinct().ToList();
+            if (list.Count == 0 && !string.IsNullOrEmpty(DiscoveryLinkUniqueId)) list.Add(DiscoveryLinkUniqueId);
+            return list;
+        }
+
+        /// <summary>Stores the source links (and the first one in the legacy single-link field).</summary>
+        public void SetDiscoveryLinks(IEnumerable<string> linkUniqueIds)
+        {
+            DiscoveryLinkUniqueIds = (linkUniqueIds ?? Enumerable.Empty<string>()).Where(s => !string.IsNullOrEmpty(s)).Distinct().ToList();
+            DiscoveryLinkUniqueId = DiscoveryLinkUniqueIds.FirstOrDefault();
+        }
         public DiscoveryScope DiscoveryScope { get; set; } = DiscoveryScope.AllDoors;
         public List<string> DiscoveryLevelNames { get; set; } = new List<string>();
 
@@ -62,6 +85,7 @@ namespace Sentinel.Core.Models
         {
             var c = (SentinelSettings)MemberwiseClone();
             c.DiscoveryLevelNames = new List<string>(DiscoveryLevelNames ?? new List<string>());
+            c.DiscoveryLinkUniqueIds = new List<string>(DiscoveryLinkUniqueIds ?? new List<string>());
             c.CapturedParameterNames = new List<string>(CapturedParameterNames ?? new List<string>());
             return c;
         }

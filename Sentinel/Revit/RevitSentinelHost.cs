@@ -35,6 +35,7 @@ namespace Sentinel.Revit
         private PreviewGraphicsServer _preview;
         private ElementId _storageId;
         private bool _subscribed;
+        private volatile bool _closed;
 
         public RevitSentinelHost(UIApplication uiApp, Document doc)
         {
@@ -169,9 +170,9 @@ namespace Sentinel.Revit
             Run<IList<LinkInfo>>("GetLinks", app => DoorDiscoveryService.GetLinks(_doc), done, ex => new List<LinkInfo>());
         }
 
-        public void GetLinkLevels(string linkUniqueId, Action<IList<string>> done)
+        public void GetLinkLevels(IList<string> linkUniqueIds, Action<IList<string>> done)
         {
-            Run<IList<string>>("GetLinkLevels", app => DoorDiscoveryService.GetLevels(_doc, linkUniqueId), done, ex => new List<string>());
+            Run<IList<string>>("GetLinkLevels", app => DoorDiscoveryService.GetLevels(_doc, linkUniqueIds), done, ex => new List<string>());
         }
 
         public void DiscoverDoors(DiscoveryRequest request, Action<DiscoveryResult> done)
@@ -444,35 +445,48 @@ namespace Sentinel.Revit
             _subscribed = true;
         }
 
+        /// <summary>
+        /// Called when the window closes (UI thread, outside the Revit API context). The event handlers stop
+        /// reacting immediately; removing them from the Application and unregistering the preview server require
+        /// the API context, so that work is queued onto the ExternalEvent.
+        /// </summary>
         public void Shutdown()
         {
-            try
-            {
-                if (_subscribed)
-                {
-                    _uiApp.Application.DocumentChanged -= OnDocumentChanged;
-                    _uiApp.Application.DocumentClosing -= OnDocumentClosing;
-                    _subscribed = false;
-                }
-            }
-            catch (Exception ex) { SentinelLog.Error("Unsubscribe failed", ex); }
+            if (_closed) return;
+            _closed = true;
 
             var preview = _preview;
             _preview = null;
-            if (preview != null)
+            _queue.Enqueue("Shutdown", app =>
             {
-                _queue.Enqueue("UnregisterPreview", app =>
+                try
                 {
-                    preview.Clear();
-                    preview.Unregister();
-                    try { app.ActiveUIDocument?.RefreshActiveView(); } catch { }
-                });
-            }
+                    if (_subscribed)
+                    {
+                        app.Application.DocumentChanged -= OnDocumentChanged;
+                        app.Application.DocumentClosing -= OnDocumentClosing;
+                        _subscribed = false;
+                    }
+                }
+                catch (Exception ex) { SentinelLog.Error("Unsubscribe failed", ex); }
+
+                if (preview != null)
+                {
+                    try
+                    {
+                        preview.Clear();
+                        preview.Unregister();
+                        app.ActiveUIDocument?.RefreshActiveView();
+                    }
+                    catch (Exception ex) { SentinelLog.Error("Removing the preview failed", ex); }
+                }
+            });
             // The ExternalEvent is not disposed from inside its own handler; it is released with the host.
         }
 
         private void OnDocumentClosing(object sender, DocumentClosingEventArgs e)
         {
+            if (_closed) return;
             try
             {
                 if (e.Document != null && e.Document.Equals(_doc))
@@ -483,6 +497,7 @@ namespace Sentinel.Revit
 
         private void OnDocumentChanged(object sender, DocumentChangedEventArgs e)
         {
+            if (_closed) return; // window closed; handlers are removed on the next API call
             try
             {
                 if (!e.GetDocument().Equals(_doc)) return;

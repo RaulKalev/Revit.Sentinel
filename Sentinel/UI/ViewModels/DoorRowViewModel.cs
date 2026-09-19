@@ -70,6 +70,9 @@ namespace Sentinel.UI.ViewModels
             StatusText = DoorSetStatusEvaluator.StatusText(Status);
             StatusBrushKey = BrushKey(Status);
             Reason = Evaluation.PrimaryReason;
+            // Same opening in another source link (architecture split across models): say so while the door is free.
+            if (string.IsNullOrEmpty(Reason) && !string.IsNullOrEmpty(Door?.PossibleDuplicateOf))
+                Reason = "Probably the same door as " + Door.PossibleDuplicateOf;
 
             if (Instance == null || string.IsNullOrEmpty(Instance.DefinitionId))
                 ReviewText = "";
@@ -87,7 +90,7 @@ namespace Sentinel.UI.ViewModels
             SearchBlob = string.Join(" ", new[]
             {
                 Mark, TypeName, Level, src?.SideARoom, src?.SideBRoom, SetCode, SetName, StatusText, src?.IfcGlobalId,
-                src?.FamilyName
+                src?.FamilyName, src?.LinkName, Door?.PossibleDuplicateOf
             }.Where(s => !string.IsNullOrEmpty(s))).ToLowerInvariant();
 
             RefreshAll();

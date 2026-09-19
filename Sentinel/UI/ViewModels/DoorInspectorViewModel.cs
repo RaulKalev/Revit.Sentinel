@@ -196,7 +196,7 @@ namespace Sentinel.UI.ViewModels
                 var def = inst != null ? Project.FindDoorSet(inst.DefinitionId) : null;
 
                 Title = row.Mark;
-                Subtitle = string.Join(" • ", new[] { src?.TypeName, src?.LevelName }.Where(s => !string.IsNullOrWhiteSpace(s)));
+                Subtitle = string.Join(" • ", new[] { src?.TypeName, src?.LevelName, LinkInfo.Short(src?.LinkName) }.Where(s => !string.IsNullOrWhiteSpace(s)));
                 RoomsText = SentinelSession.SideName(src, true) + "  ·  " + SentinelSession.SideName(src, false);
                 Status = row.Status;
                 StatusText = row.StatusText;
@@ -205,6 +205,12 @@ namespace Sentinel.UI.ViewModels
                     inst.ReviewState == ReviewState.NeedsReview ? "Needs review" : "Not reviewed";
                 foreach (var i in row.Evaluation.Issues.OrderByDescending(x => x.Severity))
                     Issues.Add(new IssueItem { Severity = i.Severity, Message = i.Message });
+                if (!string.IsNullOrEmpty(row.Door?.PossibleDuplicateOf))
+                    Issues.Add(new IssueItem
+                    {
+                        Severity = IssueSeverity.Info,
+                        Message = "Probably the same door as " + row.Door.PossibleDuplicateOf + " (modelled in two links). Give only one of them a door set."
+                    });
                 if (!string.IsNullOrWhiteSpace(inst?.LastError) && !Issues.Any(i => i.Message.Contains(inst.LastError)))
                     Issues.Add(new IssueItem { Severity = IssueSeverity.Error, Message = "Last placement: " + inst.LastError });
 

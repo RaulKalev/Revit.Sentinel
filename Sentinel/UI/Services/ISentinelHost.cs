@@ -44,7 +44,8 @@ namespace Sentinel.UI.Services
         void SaveProject(string reason, Action<OperationResult> done);
 
         void GetLinks(Action<IList<LinkInfo>> done);
-        void GetLinkLevels(string linkUniqueId, Action<IList<string>> done);
+        /// <summary>Level names of the given links (union, lowest first).</summary>
+        void GetLinkLevels(IList<string> linkUniqueIds, Action<IList<string>> done);
         void DiscoverDoors(DiscoveryRequest request, Action<DiscoveryResult> done);
 
         /// <summary>Verifies sources, checks placed components and rebuilds relationships from element tags.</summary>
@@ -87,11 +88,25 @@ namespace Sentinel.UI.Services
         public bool IsLoaded { get; set; }
 
         public string DisplayName => (IsIfc ? "[IFC] " : "") + Name + (IsLoaded ? "" : " (not loaded)");
+
+        /// <summary>Name without Revit's instance suffix ("SA.ifc : 12" → "SA.ifc"), for summaries.</summary>
+        public string ShortName => Short(Name);
+
+        public static string Short(string linkName)
+        {
+            if (string.IsNullOrWhiteSpace(linkName)) return linkName;
+            var i = linkName.LastIndexOf(" : ", StringComparison.Ordinal);
+            return i > 0 ? linkName.Substring(0, i) : linkName;
+        }
     }
 
     public class DiscoveryRequest
     {
-        public string LinkUniqueId { get; set; }
+        /// <summary>Linked models to collect doors from (one or more).</summary>
+        public List<string> LinkUniqueIds { get; set; } = new List<string>();
+
+        /// <summary>Leave out Doors-category elements whose type name starts with "Window".</summary>
+        public bool SkipWindowTypes { get; set; }
         public DiscoveryScope Scope { get; set; }
         public List<string> LevelNames { get; set; } = new List<string>();
     }
@@ -100,7 +115,16 @@ namespace Sentinel.UI.Services
     {
         public bool Success { get; set; }
         public string Error { get; set; }
+        /// <summary>Link names joined for messages ("AR.ifc + SA.ifc").</summary>
         public string LinkName { get; set; }
+
+        /// <summary>Doors found per link, in request order ("AR.ifc: 97").</summary>
+        public List<string> CountsByLink { get; set; } = new List<string>();
+
+        /// <summary>Doors that appear to be modelled in more than one link.</summary>
+        public int PossibleDuplicates { get; set; }
+
+        public int SkippedWindowTypes { get; set; }
         public List<DiscoveredDoor> Doors { get; set; } = new List<DiscoveredDoor>();
         public List<string> Warnings { get; set; } = new List<string>();
     }
