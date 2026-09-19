@@ -118,29 +118,54 @@
                 </WrapPanel>
             </DockPanel>
 
-            <!--  Summary: where it goes, and its state in words  -->
-            <StackPanel Margin="26,4,0,0">
+            <!--  Summary: where it goes. The state is spelled out only when it needs attention (the glyph shape
+                 already distinguishes placed / planned); everything else is under Details.  -->
+            <StackPanel Margin="26,3,0,0">
                 <TextBlock Style="{StaticResource Type.Secondary}" Text="{Binding Summary}" />
-                <TextBlock
-                    Margin="0,2,0,0"
-                    Style="{StaticResource Type.Caption}"
-                    Text="{Binding StateText}" />
-                <TextBlock
-                    Margin="0,2,0,0"
-                    Text="{Binding FamilyText}"
-                    TextTrimming="CharacterEllipsis"
-                    ToolTip="{Binding FamilyText}">
-                    <TextBlock.Style>
-                        <Style BasedOn="{StaticResource Type.Caption}" TargetType="{x:Type TextBlock}">
-                            <Setter Property="TextWrapping" Value="NoWrap" />
+                <DockPanel Margin="0,4,0,0">
+                    <DockPanel.Style>
+                        <Style TargetType="{x:Type DockPanel}">
                             <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsFamilyMissing}" Value="True">
-                                    <Setter Property="Foreground" Value="{DynamicResource Status.Error}" />
+                                <DataTrigger Binding="{Binding StateKind}" Value="ok">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding StateKind}" Value="planned">
+                                    <Setter Property="Visibility" Value="Collapsed" />
                                 </DataTrigger>
                             </Style.Triggers>
                         </Style>
-                    </TextBlock.Style>
-                </TextBlock>
+                    </DockPanel.Style>
+                    <TextBlock
+                        FontSize="{StaticResource FontSize.Secondary}"
+                        FontWeight="SemiBold"
+                        Text="{Binding StateText}"
+                        TextWrapping="Wrap">
+                        <TextBlock.Style>
+                            <Style TargetType="{x:Type TextBlock}">
+                                <Setter Property="Foreground" Value="{DynamicResource Text.Secondary}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding StateKind}" Value="error">
+                                        <Setter Property="Foreground" Value="{DynamicResource Status.Error}" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding StateKind}" Value="warn">
+                                        <Setter Property="Foreground" Value="{DynamicResource Status.Warning}" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding StateKind}" Value="manual">
+                                        <Setter Property="Foreground" Value="{DynamicResource Status.Warning}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </DockPanel>
+                <!--  A missing family blocks placement, so it is never hidden  -->
+                <TextBlock
+                    Margin="0,4,0,0"
+                    FontSize="{StaticResource FontSize.Secondary}"
+                    Foreground="{DynamicResource Status.Error}"
+                    Text="{Binding FamilyText}"
+                    TextWrapping="Wrap"
+                    Visibility="{Binding IsFamilyMissing, Converter={StaticResource BoolToVis}}" />
 
                 <!--  Placement issues for this component  -->
                 <DockPanel Margin="0,6,0,0" Visibility="{Binding HasIssues, Converter={StaticResource BoolToVis}}">
@@ -167,15 +192,23 @@
                     ToolTip="Accept the position the component was moved to in Revit"
                     Visibility="{Binding IsEnabled, RelativeSource={RelativeSource Self}, Converter={StaticResource BoolToVis}}" />
 
-                <!--  Why it is placed there (on demand)  -->
+                <!--  Details on demand: family, state, how the position is calculated  -->
                 <ToggleButton
                     x:Name="WhyToggle"
                     Margin="-4,4,0,0"
-                    Content="How the position is calculated"
-                    Style="{StaticResource Toggle.Disclosure}"
-                    Visibility="{Binding Explanation, Converter={StaticResource NotEmptyToVis}}" />
-                <StackPanel Margin="18,2,0,0" Visibility="{Binding IsChecked, ElementName=WhyToggle, Converter={StaticResource BoolToVis}}">
-                    <TextBlock Style="{StaticResource Type.Secondary}" Text="{Binding Explanation}" />
+                    Content="Details"
+                    Style="{StaticResource Toggle.Disclosure}" />
+                <StackPanel Margin="18,2,0,2" Visibility="{Binding IsChecked, ElementName=WhyToggle, Converter={StaticResource BoolToVis}}">
+                    <TextBlock Style="{StaticResource Type.Caption}" Text="{Binding FamilyText}" />
+                    <TextBlock
+                        Margin="0,2,0,0"
+                        Style="{StaticResource Type.Caption}"
+                        Text="{Binding StateText}" />
+                    <TextBlock
+                        Margin="0,6,0,0"
+                        Style="{StaticResource Type.Secondary}"
+                        Text="{Binding Explanation}"
+                        Visibility="{Binding Explanation, Converter={StaticResource NotEmptyToVis}}" />
                     <TextBlock
                         Margin="0,4,0,0"
                         Style="{StaticResource Type.Caption}"

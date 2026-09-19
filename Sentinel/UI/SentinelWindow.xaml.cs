@@ -57,6 +57,7 @@ namespace Sentinel.UI
             SizeChanged += (s, e) => UpdateLayoutMode();
             StateChanged += (s, e) => UpdateMaximizedState();
             PreviewKeyDown += OnPreviewKeyDown;
+            ViewModel.PropertyChanged += (s, e) => { if (e.PropertyName == nameof(MainViewModel.CurrentPage)) UpdateLayoutMode(); };
         }
 
         public MainViewModel ViewModel { get; }
@@ -70,6 +71,12 @@ namespace Sentinel.UI
 
         public bool IsSheetShown => SheetHost.Visibility == System.Windows.Visibility.Visible;
 
+        /// <summary>Opens or closes the Doors page source popover (link, scope, levels, Find doors).</summary>
+        public bool IsDoorSourceOpen { get => SourceButton.IsChecked == true; set => SourceButton.IsChecked = value; }
+
+        /// <summary>Content of the door source popover (the harness renders it; popups are separate windows).</summary>
+        public FrameworkElement DoorSourcePanel => (FrameworkElement)SourcePopup.Child;
+
         public bool IsCompact
         {
             get => (bool)GetValue(IsCompactProperty);
@@ -82,7 +89,8 @@ namespace Sentinel.UI
         {
             IsCompact = ActualWidth < CompactWidth;
             SidebarColumn.Width = new GridLength(IsCompact ? 60 : 212);
-            PageSubtitleText.Visibility = ActualWidth < 1250 ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+            // Doors shows its source button in this place; other pages show a short description when there is room.
+            PageSubtitleText.Visibility = ActualWidth < 1250 || ViewModel.IsDoorsPage ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
         }
 
         private void UpdateMaximizedState()
@@ -108,6 +116,13 @@ namespace Sentinel.UI
         {
             var key = e.Key == Key.System ? e.SystemKey : e.Key;
             var mods = Keyboard.Modifiers;
+
+            if (key == Key.Escape && SourceButton.IsChecked == true)
+            {
+                SourceButton.IsChecked = false;
+                e.Handled = true;
+                return;
+            }
 
             if (Sheets.IsOpen)
             {
@@ -190,6 +205,8 @@ namespace Sentinel.UI
                 if (restore != null && restore.IsVisible && restore.IsEnabled) restore.Focus();
             }
         }
+
+        private void FindDoors_Click(object sender, RoutedEventArgs e) => SourceButton.IsChecked = false;
 
         private void SheetPrimary_Click(object sender, RoutedEventArgs e) => Sheets.Complete(true);
         private void SheetSecondary_Click(object sender, RoutedEventArgs e) => Sheets.Complete(false);

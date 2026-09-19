@@ -102,6 +102,7 @@ namespace Sentinel.UI.ViewModels
             set
             {
                 if (!Set(ref _selectedLink, value)) return;
+                OnPropertyChanged(nameof(SourceText));
                 LoadLevels();
             }
         }
@@ -111,7 +112,7 @@ namespace Sentinel.UI.ViewModels
             get => _selectedScope;
             set
             {
-                if (Set(ref _selectedScope, value)) OnPropertyChanged(nameof(IsLevelScope));
+                if (Set(ref _selectedScope, value)) OnPropertiesChanged(nameof(IsLevelScope), nameof(SourceText));
             }
         }
 
@@ -125,6 +126,10 @@ namespace Sentinel.UI.ViewModels
                 return n == 0 ? "Choose levels…" : n == 1 ? Levels.First(l => l.IsChecked).Name : n + " levels";
             }
         }
+
+        /// <summary>Compact description of where doors come from ("ARH_Model.ifc · All linked doors").</summary>
+        public string SourceText =>
+            (_selectedLink?.DisplayName ?? "Choose a linked model") + "  ·  " + (IsLevelScope ? LevelSummary : _selectedScope?.Text ?? "");
 
         public string SearchText
         {
@@ -182,7 +187,7 @@ namespace Sentinel.UI.ViewModels
 
         /// <summary>"3 doors selected" – the scope every action bar command works on.</summary>
         public string SelectionText =>
-            _selectedRows.Count == 0 ? "No doors selected" :
+            _selectedRows.Count == 0 ? "Select doors in the list to assign, review or place them" :
             _selectedRows.Count == 1 ? "1 door selected (" + _selectedRows[0].Mark + ")" :
             _selectedRows.Count + " doors selected";
 
@@ -224,6 +229,9 @@ namespace Sentinel.UI.ViewModels
         public string Summary { get => _summary; private set => Set(ref _summary, value); }
 
         public bool HasRows => Rows.Count > 0;
+
+        /// <summary>Doors exist, but the search or filter hides all of them.</summary>
+        public bool HasNoMatches => Rows.Count > 0 && RowsView.IsEmpty;
 
         // ------------------------------------------------------------------ lifecycle
 
@@ -278,7 +286,7 @@ namespace Sentinel.UI.ViewModels
         private void LoadLevels()
         {
             Levels.Clear();
-            OnPropertyChanged(nameof(LevelSummary));
+            OnPropertiesChanged(nameof(LevelSummary), nameof(SourceText));
             if (_selectedLink == null || !_selectedLink.IsLoaded) return;
             var stored = new HashSet<string>(Project.Settings.DiscoveryLevelNames ?? new List<string>());
             _main.Host.GetLinkLevels(_selectedLink.UniqueId, names =>
@@ -287,10 +295,10 @@ namespace Sentinel.UI.ViewModels
                 foreach (var n in names)
                 {
                     var lo = new LevelOption { Name = n, IsChecked = stored.Contains(n) };
-                    lo.Changed += (s, e) => OnPropertyChanged(nameof(LevelSummary));
+                    lo.Changed += (s, e) => OnPropertiesChanged(nameof(LevelSummary), nameof(SourceText));
                     Levels.Add(lo);
                 }
-                OnPropertyChanged(nameof(LevelSummary));
+                OnPropertiesChanged(nameof(LevelSummary), nameof(SourceText));
             });
         }
 
@@ -489,6 +497,7 @@ namespace Sentinel.UI.ViewModels
 
         private void UpdateSummary()
         {
+            OnPropertyChanged(nameof(HasNoMatches));
             var shown = RowsView.Cast<object>().Count();
             var total = Rows.Count;
             if (total == 0)

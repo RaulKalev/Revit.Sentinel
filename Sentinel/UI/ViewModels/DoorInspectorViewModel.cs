@@ -226,8 +226,8 @@ namespace Sentinel.UI.ViewModels
                     plan != null && plan.HingeAssumed ? "assumed – check the preview" :
                     geometry?.Source == DoorGeometrySource.FamilyInstance ? "from door family" : "unknown";
                 HingeText = plan != null
-                    ? DoorSetPlacementCalculator.HingeText(plan.ResolvedHinge) + " (" + hingeSource + ")"
-                    : geometry != null ? DoorSetPlacementCalculator.HingeText(geometry.Hinge) : "";
+                    ? Sentence(DoorSetPlacementCalculator.HingeText(plan.ResolvedHinge)) + "  ·  " + hingeSource
+                    : geometry != null ? Sentence(DoorSetPlacementCalculator.HingeText(geometry.Hinge)) : "";
 
                 if (inst != null && def != null) BuildComponents(inst, def, plan);
                 foreach (var c in Project.ComponentDefinitions.OrderBy(c => c.Name)) AddChoices.Add(c);
@@ -296,6 +296,8 @@ namespace Sentinel.UI.ViewModels
         }
 
         private static string Mm(double v) => v.ToString("0", CultureInfo.InvariantCulture);
+
+        private static string Sentence(string s) => string.IsNullOrEmpty(s) ? s : char.ToUpperInvariant(s[0]) + s.Substring(1);
 
         // ------------------------------------------------------------------ edits
 

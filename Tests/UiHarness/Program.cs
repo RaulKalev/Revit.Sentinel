@@ -140,6 +140,12 @@ namespace Sentinel.UiHarness
             Gallery.Capture(window, "02_doors_multiselect");
             Select(doors);
             Gallery.Capture(window, "03_doors_no_selection_disabled_actions");
+            doors.SearchText = "no-such-door";
+            Pump();
+            Check(doors.HasNoMatches, "a search without results says so instead of showing an empty list");
+            Gallery.Capture(window, "17_doors_no_matches");
+            doors.SearchText = "";
+            Pump();
 
             // Validation error in the inspector's component editor (not applied to the model)
             Select(doors, "D105");
@@ -300,6 +306,21 @@ namespace Sentinel.UiHarness
             Snap(window, "11_doors_light_theme.png");
             window.Theme.ToggleTheme();
             Pump();
+
+            // Door source popover (link, scope, Find doors) in both themes
+            foreach (var dark in new[] { true, false })
+            {
+                if (window.Theme.IsDarkMode != dark) window.Theme.ToggleTheme();
+                window.IsDoorSourceOpen = true;
+                Pump();
+                System.Threading.Thread.Sleep(250);
+                Pump();
+                Check(window.DoorSourcePanel.IsVisible, "door source popover opens from the title area");
+                Gallery.RenderElement(window.DoorSourcePanel, Path.Combine(Gallery.Dir, "16_door_source_popover_" + (dark ? "dark" : "light") + ".png"));
+                window.IsDoorSourceOpen = false;
+                Pump();
+            }
+            if (!window.Theme.IsDarkMode) window.Theme.ToggleTheme();
 
             // In-window sheets (the window's own non-blocking dialog service)
             bool? sheetAnswer = null;

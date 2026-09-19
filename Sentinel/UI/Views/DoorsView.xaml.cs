@@ -83,15 +83,8 @@ namespace Sentinel.UI.Views
         private void UpdateDensity()
         {
             var w = ActualWidth;
-            var narrow = w < 1060;
-            LinkLabel.Visibility = ScopeLabel.Visibility = narrow ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
-            LinkCombo.Width = narrow ? 170 : 200;
-            ScopeCombo.Width = narrow ? 132 : 150;
-            SearchBox.Parent.SetValue(WidthProperty, narrow ? 170.0 : 220.0);
-            // The action bar keeps Assign, Review and Update; "Place without review" stays in the More menu.
-            PlaceButton.Visibility = w < 1000 ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
-            ToggleWorkspaceText.Visibility = narrow ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
-            SelectionLabel.MaxWidth = narrow ? 150 : 240;
+            SearchHost.Width = w < 1060 ? 170 : 220;
+            AssignCombo.Width = w < 1000 ? 150 : 210;
             // At small sizes the list keeps at least ~60 % of the width; the panel returns to its chosen width later.
             if (_vm == null || _vm.IsInspectorVisible)
                 WorkspaceColumn.Width = new GridLength(EffectiveWorkspaceWidth());
@@ -157,6 +150,14 @@ namespace Sentinel.UI.Views
         {
             SearchBox.Clear();
             SearchBox.Focus();
+        }
+
+        private void PlaceOptionsButton_Click(object sender, RoutedEventArgs e)
+        {
+            PlaceOptionsMenu.PlacementTarget = PlaceOptionsButton;
+            PlaceOptionsMenu.Placement = PlacementMode.Top;
+            PlaceOptionsMenu.DataContext = DataContext;
+            PlaceOptionsMenu.IsOpen = true;
         }
 
         private void MoreButton_Click(object sender, RoutedEventArgs e)

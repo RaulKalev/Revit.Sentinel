@@ -381,7 +381,7 @@
                                     VerticalAlignment="Center"
                                     FontSize="{StaticResource FontSize.Secondary}"
                                     Foreground="{DynamicResource Text.Secondary}"
-                                    Text="{Binding HingeText, StringFormat=Hinge: {0}}"
+                                    Text="{Binding HingeText}"
                                     TextWrapping="Wrap" />
                             </DockPanel>
 

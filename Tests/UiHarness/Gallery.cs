@@ -53,6 +53,14 @@ namespace Sentinel.UiHarness
             Render(window, scale, Path.Combine(Dir, name + "_scale" + (int)(scale * 100) + ".png"));
         }
 
+        public static void RenderElement(FrameworkElement el, string path)
+        {
+            el.UpdateLayout();
+            var rtb = new RenderTargetBitmap((int)Math.Ceiling(el.ActualWidth), (int)Math.Ceiling(el.ActualHeight), 96, 96, PixelFormats.Pbgra32);
+            rtb.Render(el);
+            PlanRenderer.Save(rtb, path);
+        }
+
         public static void Render(Window w, double scale, string path)
         {
             var el = (FrameworkElement)w.Content;

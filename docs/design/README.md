@@ -20,7 +20,7 @@ File names: `<state>_<dark|light>_<width>x<height>.png`, `*_scale150.png` = 144 
 | Dialog → in-window sheet | ![](before/11_dialog_dark.png) | ![](after/11_sheet_confirm_dark_1280x780.png) |
 
 Additional after-only captures: `12_sheet_path_*`, `13_sheet_error_*`, `14_doors_solid_materials_*`
-(reduced transparency), `15_doors_high_contrast.png`.
+(reduced transparency), `15_doors_high_contrast.png`, `16_door_source_popover_*`, `17_doors_no_matches_*`.
 
 ## Design system
 
@@ -46,38 +46,49 @@ Additional after-only captures: `12_sheet_path_*`, `13_sheet_error_*`, `14_doors
 
 ## Doors workflow
 
-- **Discovery** happens in the toolbar: linked model, scope, Find doors, and Refresh (F5). Search (Ctrl+F) is on
-  the right.
-- **Status filter** is a segmented control with a count on every segment.
-- **Grid** priority is status (glyph and word), door, access direction, set, then reason. Level, Parts and Review
-  are dropped first as the list narrows. Below 560 px the status column shrinks to its icon; the word stays in the
-  tooltip and the review panel. Row virtualisation is unchanged.
+- **Door source** is chosen once per session, so it moved out of the page into the title area: "Doors · 🔗
+  ARH_Model.ifc · All linked doors ⌄". It opens a popover with the linked model, which doors to collect, levels,
+  and Find doors. This frees a full row of vertical space.
+- **One control row**: status filter (segmented, with counts), then Refresh (F5), Search (Ctrl+F) and the review
+  panel toggle.
+- **Grid** priority is status (glyph and word), door mark, access direction, set, then reason. Access gets the most
+  room. Level, Parts and Review are dropped first as the list narrows. Below 560 px the status column shrinks to its
+  icon; the word stays in the tooltip and the review panel. Row virtualisation is unchanged.
+- **Empty and no-result states** say what to do: "No doors yet" with a Find doors button, and "No matching doors"
+  when a search or filter hides everything.
 - **Assignment and placement** live in a floating action bar.
-  - The bar starts with the scope of every command ("3 doors selected", Clear).
-  - Then Assign, then Review and place / Place without review / Update placement.
+  - With nothing selected it shows a hint and one useful action (Suggest sets from rules), not a row of disabled
+    buttons.
+  - With a selection it starts with the scope ("3 doors selected", Clear), then Assign, then a split button:
+    Review and place, with Place without review in its menu. Update placement follows.
   - The next step for the current selection becomes the primary (filled) button: Assign, Review, or Update.
-  - Infrequent commands go in the "…" menu: suggest from rules, remove set, ignore, zoom, select in Revit.
+  - Infrequent commands go in the "…" menu: remove set, ignore, zoom, select in Revit.
 - **One review workspace** replaces the inspector and preview panels, so nothing is shown twice.
   - A sticky header shows the door, its status and review state, its rooms and its issues. While previewing, an
     accent strip adds "Reviewing door 1 of 3", the next door, Previous/Next (Alt+←/→) and End review (Esc).
   - The scrolling body holds the adjustments: set, direction + Flip, hinge + Swap, components, source details and
     notes. Adjustments during a preview update the preview immediately.
-  - A sticky footer, shown only while previewing, has Skip and the confirmation. Its label says what happens:
-    "Place and next", "Update and next", "Place door set" or "Update placement".
+  - A sticky footer, shown only while previewing, has Auto zoom, Skip and the confirmation. Its label says what
+    happens: "Place and next", "Update and next", "Place door set" or "Update placement".
   - At small window sizes the panel takes at most ~38 % of the width. The panel can be hidden and resized, and both
     choices are remembered.
-- **Component rows** start with a one-line summary, for example "Latch jamb +150 mm · Unsecured side · 1000 mm from
-  bottom". They also show the state in words and the family mapping.
-  - Badges: Override, Added, Removed, and No family (glyph plus word).
+- **Component cards** show a title and a one-line summary, for example "Latch jamb +150 mm · Unsecured side ·
+  1000 mm from bottom".
+  - The state is written out only when it needs attention (missing, failed, manual, partly placed); the glyph shape
+    already separates placed from planned. A missing family is always shown.
+  - Badges: Override, Added, Removed, and No family (glyph plus word). Family, state and the calculation sit
+    behind "Details".
   - "Adjust" opens the per-door editor and scrolls it into view. Common fields come first; the rest are behind
     "More placement options", which opens by itself if one of its fields is invalid.
   - Validation runs as you type and is written under the fields. Apply stays disabled until the values are valid.
   - An unapplied edit survives refreshes. The panel's scroll position is kept for the same door and only resets
     when another door is shown.
+- **Status line**: routine results use neutral text with a coloured glyph; the door counts appear only on Doors.
 
 ## Other pages
 
-- **Door Sets** shows collapsed summary cards with a disclosure. Expanded rows are remembered, and a row with an
+- **Door Sets** shows collapsed summary cards with a disclosure; reorder and delete appear on hover or keyboard
+  focus. Expanded rows are remembered, and a row with an
   invalid value opens by itself.
 - **Components**:
   - the missing mapping reads as a red "Unmapped" badge in the list and an error banner in the editor
@@ -121,7 +132,7 @@ Additional after-only captures: `12_sheet_path_*`, `13_sheet_error_*`, `14_doors
 
 ## Verification
 
-**UI harness** (`Tests/UiHarness`, real window plus fake host): 48 checks pass. New checks cover:
+**UI harness** (`Tests/UiHarness`, real window plus fake host): 51 checks pass. New checks cover:
 
 - sheets: open, cancel, path, and queueing
 - the editor scrolls into view on Adjust
