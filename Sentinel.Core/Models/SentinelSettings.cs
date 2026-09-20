@@ -85,6 +85,25 @@ namespace Sentinel.Core.Models
         public DoorZoomView ZoomView { get; set; } = DoorZoomView.View3D;
 
         /// <summary>
+        /// Measure walls of all loaded models around wall-side components before review / placement and move them out
+        /// of wall material (see WallClearance). Off for now: it slows placement down; a separate clash check will
+        /// replace it. While off, no measuring happens and stored push-outs are not applied.
+        /// </summary>
+        public bool CheckWallClearance { get; set; }
+
+        /// <summary>
+        /// Floor plans whose name contains one of these words (comma separated, first wins) are preferred when "Zoom to
+        /// door" opens a plan, e.g. "Security, EL". Empty = no preference.
+        /// </summary>
+        public string PlanNameKeywords { get; set; }
+
+        /// <summary>How close "Zoom to door" gets in floor plans: 100 = the standard framing, 200 = twice as close.</summary>
+        public double PlanZoomPercent { get; set; } = ZoomLevels.Default;
+
+        /// <summary>How close "Zoom to door" gets in 3D (also scales the section box when zooming out).</summary>
+        public double View3DZoomPercent { get; set; } = ZoomLevels.Default;
+
+        /// <summary>
         /// Linked models by priority (link names without the instance number, e.g. "ITM_TP_AR.ifc"). When the same door
         /// is modelled in several links, only the door of the highest model is listed; the others are shown as Ignored.
         /// Links not named here follow in discovery order.

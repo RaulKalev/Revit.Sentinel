@@ -141,6 +141,7 @@ namespace Sentinel.Revit.Sync
                     }
 
                     c.ElementId = RevitCompat.IdValue(el.Id);
+                    if (c.IsBuiltIn) continue; // shares the carrier's element: takes over its state below
                     Vec3 pos;
                     double rot;
                     if (!ElementPose.TryRead(el, out pos, out rot))
@@ -164,6 +165,7 @@ namespace Sentinel.Revit.Sync
                         c.PlacementNote = SplitNote(c.PlacementNote);
                     }
                 }
+                DoorSetInstanceOperations.FollowCarriers(inst);
             }
 
             if (result.RelinkedComponents > 0) result.Messages.Add(result.RelinkedComponents + " component(s) relinked from element tags.");

@@ -34,6 +34,12 @@ namespace Sentinel.Core.Models
         /// </summary>
         public bool DuplicateWhenBothDirections { get; set; }
 
+        /// <summary>
+        /// Only for components built into another component's family: which component of the set carries it (its rule
+        /// id), e.g. the magnet on the latch side when a door has two. Null = the first one of the carrier type.
+        /// </summary>
+        public string CarrierRuleId { get; set; }
+
         public PlacementRule Clone() => (PlacementRule)MemberwiseClone();
     }
 }

@@ -80,6 +80,7 @@ namespace Sentinel.Core.Placement
                 if (ov.HeightReference.HasValue) { rule.HeightReference = ov.HeightReference.Value; overridden = true; }
                 if (ov.Orientation.HasValue) { rule.Orientation = ov.Orientation.Value; overridden = true; }
                 if (ov.RotationDeg.HasValue) { rule.RotationDeg = ov.RotationDeg.Value; overridden = true; }
+                if (!string.IsNullOrEmpty(ov.CarrierRuleId)) { rule.CarrierRuleId = ov.CarrierRuleId; overridden = true; }
                 if (!string.IsNullOrEmpty(ov.ComponentDefinitionId)) overridden = true;
             }
 

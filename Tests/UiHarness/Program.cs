@@ -13,6 +13,7 @@ using Sentinel.Core.Persistence;
 using Sentinel.Core.Placement;
 using Sentinel.Core.Rules;
 using Sentinel.UI;
+using Sentinel.UI.Mvvm;
 using Sentinel.UI.ViewModels;
 
 namespace Sentinel.UiHarness
@@ -77,7 +78,8 @@ namespace Sentinel.UiHarness
             doors.AssignCommand.Execute(null);
             Pump();
             Check(Row(doors, "D101").Status == SetStatus.Ready && Row(doors, "D102").SetCode == "DS-02", "manual assignment → Ready");
-            Check(Row(doors, "D122").Evaluation.Issues.Any(i => i.Code == IssueCodes.HingeAssumed), "IFC door reports assumed hinge");
+            Check(main.Session.Plan(Row(doors, "D122").Instance).HingeAssumed && !Row(doors, "D122").Evaluation.Issues.Any(i => i.Severity == IssueSeverity.Warning),
+                "IFC door: hinge assumed without a warning (checked in the review)");
 
             // ---------------------------------------------------------------- batch placement
             Select(doors, "D101", "D102", "D103", "D107", "D131");
@@ -167,16 +169,20 @@ namespace Sentinel.UiHarness
 
             // ---------------------------------------------------------------- preview workflow
             Select(doors, "D104", "D120", "D122");
+            main.Session.Project.Settings.CheckWallClearance = true; // off by default
             host.LinedDoors.Add("D104"); // a 45 mm lining of another model on side A
             doors.PreviewCommand.Execute(null);
             Pump();
             Check(doors.Preview.IsActive && Row(doors, "D104").Status == SetStatus.Preview, "preview started, row shows Preview");
+            Check(doors.SelectedCount == 0 && doors.Preview.DoorTitle == "D104", "starting the review clears the list selection; the review shows the first door");
             Check(host.Log.Any(l => l.StartsWith("WALLCHECK ") && l != "WALLCHECK 0"), "the review checks the walls first");
             var sideA = host.LastScene.Doors[0].Placements.Where(p => p.Side == ResolvedSide.SideA && !p.IsBuiltIn).ToList();
             Check(sideA.Count > 0 && sideA.All(p => Math.Abs(p.WallClearanceMm - 45) < 0.5),
                 "side A components are moved out of the other model's lining (" + string.Join(", ", sideA.Select(p => p.Label + " " + p.WallClearanceMm)) + ")");
             Check(host.LastScene.Doors[0].Placements.Where(p => p.Side == ResolvedSide.SideB).All(p => p.WallClearanceMm == 0), "side B is untouched");
             Check(doors.Preview.SkipText == "Skip", "the skip button never says (last)");
+            Check(NoAccessControlChoice.Is(doors.Inspector.SetChoices[0].Definition) && doors.Inspector.SetChoices.All(c => c.Definition != null),
+                "in the review the set dropdown starts with No access control and has no (no set)");
             Gallery.Capture(window, "22_review_layout");
             var readerBefore = host.LastScene.Doors[0].Placements.First(p => p.Label == "Reader");
             PlanRenderer.Render(host.LastScene, "D104 DS-02 (+Intercom) – before flip", Path.Combine(_out, "02_plan_D104_before_flip.png"));
@@ -191,6 +197,7 @@ namespace Sentinel.UiHarness
                   host.LastScene.Doors[0].Placements.Where(p => p.Side == ResolvedSide.SideB).All(p => p.WallClearanceMm == 0),
                 "after a flip the walls are checked again: only side A components move out");
             host.LinedDoors.Clear();
+            main.Session.Project.Settings.CheckWallClearance = false;
             PlanRenderer.Render(host.LastScene, "D104 DS-02 – after Flip Set", Path.Combine(_out, "03_plan_D104_after_flip.png"));
 
             doors.Preview.NextCommand.Execute(null);
@@ -207,7 +214,6 @@ namespace Sentinel.UiHarness
             Pump();
             Check(!doors.Preview.IsActive && host.LastScene == null, "exit preview clears the transient graphics");
             Check(Row(doors, "D122").Status == SetStatus.Ready, "skipped door stays Ready");
-
             // Rotated door plan
             Select(doors, "D130");
             doors.AssignDefinition = main.Session.Project.DoorSetDefinitions.First(d => d.Code == "DS-02");
@@ -217,6 +223,70 @@ namespace Sentinel.UiHarness
             PlanRenderer.Render(host.LastScene, "D130 in a 30° wall (plan rotated to door frame)", Path.Combine(_out, "06_plan_D130_rotated.png"));
             doors.Preview.ExitCommand.Execute(null);
             Pump();
+
+            // A row clicked during the review must not pull the review back after placing (list refresh).
+            Select(doors, "D130", "D120", "D122");
+            doors.PreviewCommand.Execute(null);
+            Pump();
+            Select(doors, "D120");                       // user clicks the current door's row
+            var refreshesBefore = host.Log.Count(l => l.StartsWith("REFRESH"));
+            Check(doors.SelectedCount == 0 && doors.Preview.DoorTitle == "D120", "a row clicked during the review only moves the review; the selection is dropped");
+            doors.Preview.ConfirmCommand.Execute(null);  // confirm D120 → continues with D122, list refreshes
+            Pump(30);
+            Check(doors.Preview.DoorTitle == "D122" && Row(doors, "D120").Status == SetStatus.Placed,
+                "after placing, the review stays on the next door instead of jumping back to the selected row (" + doors.Preview.DoorTitle + ")");
+            Check(host.Log.Count(l => l.StartsWith("REFRESH")) == refreshesBefore, "placing does not re-check the whole project afterwards (that froze Revit for seconds)");
+
+            // A placement with a warning (here: unknown wall thickness) is still placed: the review moves on, no dialog.
+            host.Door("D122").Geometry.WallThicknessMm = 0;
+            doors.Preview.OnInstanceEdited(Row(doors, "D122").Instance);
+            Pump();
+            var dialogsBefore = dialogs.Transcript.Count;
+            doors.Preview.ConfirmCommand.Execute(null);
+            Pump(30);
+            Check(doors.Preview.DoorTitle == "D130" && main.StatusMessage.StartsWith("D122 placed with a warning") && dialogs.Transcript.Count == dialogsBefore,
+                "a placement with a warning moves on to the next door and reports the warning in the status line (" + doors.Preview.DoorTitle + ": " + main.StatusMessage + ")");
+            host.Door("D122").Geometry.WallThicknessMm = 200;
+
+            // Marking a door "No access control" in the review (footer set picker): asks to delete what is placed,
+            // then continues with the next door. Picking a set again undoes it.
+            doors.Preview.PreviousCommand.Execute(null);
+            Pump();
+            Check(doors.Preview.DoorTitle == "D122" && Row(doors, "D122").HasPlacedElements, "back on the placed door D122");
+            var dialogsBeforeNac = dialogs.Transcript.Count;
+            doors.Inspector.SelectedSet = doors.Inspector.SetChoices.First(c => NoAccessControlChoice.Is(c.Definition));
+            Pump(30);
+            Check(Row(doors, "D122").Status == SetStatus.NoAccessControl && !Row(doors, "D122").HasPlacedElements &&
+                  doors.Preview.DoorTitle == "D130" && main.StatusMessage.StartsWith("D122 marked as no access control"),
+                "a door can be marked no access control in the review; its components are removed and the review moves on (" +
+                doors.Preview.DoorTitle + ": " + main.StatusMessage + ")");
+            Check(dialogs.Transcript.Count == dialogsBeforeNac && main.StatusMessage.Contains("placed components were removed"),
+                "in the review no question is asked; the status line says the placed components were removed");
+            doors.Preview.PreviousCommand.Execute(null);
+            Pump();
+            Check(doors.Preview.OutcomeText == "No access control" && doors.Inspector.IsNoAccessControl, "going back shows the decision");
+            doors.Inspector.SelectedSet = doors.Inspector.SetChoices.First(c => c.Definition?.Code == "DS-02");
+            Pump();
+            Check(Row(doors, "D122").Status == SetStatus.Preview && doors.Preview.ConfirmCommand.CanExecute(null),
+                "picking a set again in the review undoes it and the door can be placed");
+
+            // The same through the real dropdown, on a door with nothing placed (no question asked): straight to the next door.
+            var setCombo = WorkspaceProbe.Combo(window, "Door set");
+            setCombo.SelectedItem = doors.Inspector.SetChoices.First(c => NoAccessControlChoice.Is(c.Definition));
+            Pump(20);
+            setCombo = WorkspaceProbe.Combo(window, "Door set");
+            Check(Row(doors, "D122").Status == SetStatus.NoAccessControl && doors.Preview.DoorTitle == "D130" &&
+                  Row(doors, "D130").Status == SetStatus.Preview && !Row(doors, "D130").Instance.NoAccessControl &&
+                  (setCombo.SelectedItem as SetChoice)?.Definition?.Code == "DS-02",
+                "choosing No access control in the dropdown moves straight to the next door, which keeps its own set (" +
+                doors.Preview.DoorTitle + ", D130 " + Row(doors, "D130").Status + ", picker: " + ((setCombo.SelectedItem as SetChoice)?.Text ?? "(empty)") + ")");
+            doors.Preview.PreviousCommand.Execute(null);
+            Pump();
+            doors.Inspector.SelectedSet = doors.Inspector.SetChoices.First(c => c.Definition?.Code == "DS-02"); // undo for the later checks
+            Pump();
+            doors.Preview.ExitCommand.Execute(null);
+            Pump();
+
 
             // ---------------------------------------------------------------- update placement
             Select(doors, "D102", "D107", "D103");
@@ -407,6 +477,20 @@ namespace Sentinel.UiHarness
                 "'Part of another component' starts with the door contact and the lock parameters");
             Check(main.Components.BuiltInSummary.Contains("Lukk paremal") && main.Components.FamilySectionTitle == "Own family (backup)",
                 "the Components page explains the built-in lock: " + main.Components.BuiltInSummary);
+            var carrierBoxes = main.Components.CarrierChoices;
+            Check(carrierBoxes.Count > 1 && carrierBoxes.Single(c => c.IsChecked).Component == contactDef,
+                "'Carried by' lists the possible carriers as ticks, the door contact ticked");
+            var secondCarrier = carrierBoxes.First(c => !c.IsChecked).Component;
+            carrierBoxes.First(c => c.Component == secondCarrier).IsChecked = true;
+            Pump();
+            Check(lockDef.Carriers.SequenceEqual(new[] { contactDef.Id, secondCarrier.Id }) &&
+                  main.Components.CarrierChoices.Count(c => c.IsChecked) == 2 &&
+                  main.Components.BuiltInSummary.Contains(contactDef.Name + " or " + secondCarrier.Name),
+                "a second carrier can be ticked; the summary names both: " + main.Components.BuiltInSummary);
+            Gallery.Capture(window, "28_components_two_carriers");
+            main.Components.CarrierChoices.First(c => c.Component == secondCarrier).IsChecked = false;
+            Pump();
+            Check(lockDef.Carriers.SequenceEqual(new[] { contactDef.Id }), "unticking it leaves the door contact only");
             Gallery.Capture(window, "19_components_lock_built_in");
             main.CurrentPage = SentinelPage.Doors;
             Pump();
@@ -439,6 +523,62 @@ namespace Sentinel.UiHarness
                 "the review panel shows which contact parameter carries the lock");
             Gallery.Capture(window, "20_doors_lock_built_in");
 
+            // Two magnets on the door: the set type chooses which one carries the lock; one door can choose differently.
+            main.CurrentPage = SentinelPage.DoorSets;
+            Pump();
+            var ds01Def = main.Session.Project.DoorSetDefinitions.First(d => d.Code == "DS-01");
+            main.DoorSets.Selected = ds01Def;
+            Pump();
+            var lockRowBefore = main.DoorSets.Rows.First(r => r.Component == lockDef);
+            Check(!lockRowBefore.ShowsCarrierChoice, "with one magnet there is nothing to choose");
+            main.DoorSets.SelectedAdd = contactDef;
+            main.DoorSets.AddRowCommand.Execute(null);
+            Pump();
+            var lockRow = main.DoorSets.Rows.First(r => r.Component == lockDef);
+            var magnet2 = main.DoorSets.Rows.Last(r => r.Component == contactDef);
+            Check(lockRow.ShowsCarrierChoice && lockRow.CarrierChoices.Count == 2, "with two magnets the lock row asks which one carries it");
+            lockRow.CarrierChoice = lockRow.CarrierChoices.First(o => o.Value == magnet2.Slot.Id);
+            Pump();
+            Check(ds01Def.Components.First(c => c.ComponentDefinitionId == lockDef.Id).Rule.CarrierRuleId == magnet2.Slot.Id,
+                "the set type stores the chosen magnet");
+            lockRow.IsExpanded = true;
+            Pump();
+            Pump(10);
+            var builtIntoCombo = WorkspaceProbe.Combo(window, "Built into");
+            Check(lockRow.CarrierChoices.Select(o => o.Text).Distinct().Count() == 2 && lockRow.CarrierChoices[1].Text.StartsWith("Door Contact 2") &&
+                  (builtIntoCombo?.SelectedItem as Option<string>)?.Value == magnet2.Slot.Id,
+                "two magnets with the same name are numbered, and the dropdown shows the chosen one (" +
+                string.Join(" | ", lockRow.CarrierChoices.Select(o => o.Text)) + ")");
+            Gallery.Capture(window, "27_door_set_two_magnets");
+
+            main.CurrentPage = SentinelPage.Doors;
+            Pump();
+            Select(doors, "D105");
+            Check(main.Session.Plan(i105).Placements.First(x => x.Label == "Lock").CarrierSlotKey == magnet2.Slot.Id,
+                "the door follows the set type: the lock is built into the second magnet");
+            var lockInspector = doors.Inspector.Components.First(c => c.Label == "Lock");
+            Check(lockInspector.ShowsCarrierChoice, "the review panel offers the choice for this door");
+            var magnet1Id = ds01Def.Components.First(c => c.ComponentDefinitionId == contactDef.Id).Id;
+            lockInspector.CarrierChoice = lockInspector.CarrierChoices.First(o => o.Value == magnet1Id);
+            Pump();
+            Check(main.Session.Plan(i105).Placements.First(x => x.Label == "Lock").CarrierSlotKey == magnet1Id &&
+                  i105.Overrides.Find(ds01Def.Components.First(c => c.ComponentDefinitionId == lockDef.Id).Id)?.CarrierRuleId == magnet1Id,
+                "one door can put the lock into the other magnet");
+            doors.UpdateCommand.Execute(null);
+            Pump(30);
+            var magnet1Record = i105.Components.First(c => c.SlotKey == magnet1Id);
+            Check(i105.Components.First(c => c.Label == "Lock").ElementUniqueId == magnet1Record.ElementUniqueId,
+                "Update placement switches the lock parameter on in the chosen magnet");
+
+            // Clean up for the next steps: one magnet again, no choice stored.
+            main.CurrentPage = SentinelPage.DoorSets;
+            Pump();
+            main.DoorSets.Rows.Last(r => r.Component == contactDef).RemoveCommand.Execute(null);
+            ds01Def.Components.First(c => c.ComponentDefinitionId == lockDef.Id).Rule.CarrierRuleId = null;
+            DoorSetInstanceOperations.ClearRuleOverride(i105, ds01Def.Components.First(c => c.ComponentDefinitionId == lockDef.Id).Id);
+            main.CurrentPage = SentinelPage.Doors;
+            Pump();
+
             // Back to the lock's own family: the contact stays, its lock parameter is switched off.
             main.CurrentPage = SentinelPage.Components;
             Pump();
@@ -461,7 +601,19 @@ namespace Sentinel.UiHarness
             Pump();
             main.Settings.ZoomInFloorPlan = true;
             Pump();
+            Check(main.Settings.PlanZoomText == "100 %" && main.Settings.View3DZoomText == "100 %", "zoom amounts start at 100 %");
+            main.Settings.PlanZoomInCommand.Execute(null);
+            main.Settings.PlanZoomInCommand.Execute(null);
+            main.Settings.View3DZoomOutCommand.Execute(null);
+            Pump();
+            Check(main.Session.Project.Settings.PlanZoomPercent == 150 && main.Settings.PlanZoomText == "150 %" &&
+                  main.Session.Project.Settings.View3DZoomPercent == 75, "the zoom steppers change the amount per view");
+            main.Settings.PlanNameKeywords = "Security, EL";
+            Check(main.Session.Project.Settings.PlanNameKeywords == "Security, EL", "preferred floor plan keywords are stored in the settings");
             Gallery.Capture(window, "21_settings_zoom_view");
+            main.Session.Project.Settings.PlanNameKeywords = null;
+            main.Session.Project.Settings.PlanZoomPercent = 100;
+            main.Session.Project.Settings.View3DZoomPercent = 100;
             main.CurrentPage = SentinelPage.Doors;
             Pump();
             Select(doors, "D102");
@@ -560,6 +712,42 @@ namespace Sentinel.UiHarness
             Gallery.Render(window, 1.0, Path.Combine(Gallery.Dir, "15_doors_high_contrast.png"));
             ThemeManager.ForceHighContrast = null;
             window.Theme.ApplyTheme();
+            Pump();
+
+            // ---------------------------------------------------------------- rule on a parameter added later
+            host.SetParameter("D108", "AR_Uks.001_Nimetus", "Teras siseuks kahepoolne");
+            main.CurrentPage = SentinelPage.Doors;
+            doors.ActiveFilter = "All";
+            Pump();
+            Select(doors, "D108");
+            main.CurrentPage = SentinelPage.Rules;
+            Pump(20);
+            main.Rules.NewCommand.Execute(null);
+            main.Rules.RuleName = "Double doors";
+            main.Rules.Conditions[0].Field = "AR_Uks.001_Nimetus";
+            main.Rules.Conditions[0].Operator = UiChoices.Operators.First(o => o.Value == RuleOperator.Contains);
+            main.Rules.Conditions[0].Value = "kahepoolne";
+            main.Rules.TestCommand.Execute(null);
+            Pump();
+            Check(main.Rules.TestResult.Contains("does not match") && main.Rules.TestResult.Contains("(no value on this door)") &&
+                  main.Rules.TestResult.Contains("add it under Settings → Captured door parameters"),
+                "a rule on a parameter that is not captured explains why it does not match: " + main.Rules.TestResult);
+
+            main.CurrentPage = SentinelPage.Settings;
+            Pump();
+            main.Settings.CapturedParameters = main.Settings.CapturedParameters + ", AR_Uks.001_Nimetus";
+            Check(doors.ParametersOutOfDate, "adding a captured parameter makes the door data out of date");
+            main.CurrentPage = SentinelPage.Rules;
+            Pump(40);
+            Check(!doors.ParametersOutOfDate && main.StatusMessage.StartsWith("New captured parameters read."),
+                "going back to Rules reads the doors again: " + main.StatusMessage);
+            main.Rules.TestCommand.Execute(null);
+            Pump();
+            Check(main.Rules.TestResult.StartsWith("D108: this rule matches.") &&
+                  main.Rules.TestResult.Contains("✓ AR_Uks.001_Nimetus \"Teras siseuks kahepoolne\" contains \"kahepoolne\""),
+                "after that the rule matches and shows the value it checked: " + main.Rules.TestResult);
+            Gallery.Capture(window, "26_rule_test_values");
+            main.Rules.DeleteCommand.Execute(null);
             Pump();
 
             // ---------------------------------------------------------------- reader moved in the model → use that position

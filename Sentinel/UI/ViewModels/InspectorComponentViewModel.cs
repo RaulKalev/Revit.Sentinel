@@ -142,7 +142,13 @@ namespace Sentinel.UI.ViewModels
 
             if (missing > 0) { StateKind = "error"; StateGlyph = "⚠"; StateText = "Missing (element deleted)"; }
             else if (failed > 0) { StateKind = "error"; StateGlyph = "✗"; StateText = "Failed: " + (_records.First(r => r.State == ComponentState.Failed).LastError ?? ""); }
-            else if (manual > 0) { StateKind = "manual"; StateGlyph = "✎"; StateText = "Manually modified"; }
+            else if (manual > 0)
+            {
+                StateKind = "manual";
+                StateGlyph = "✎";
+                // Built in: it has no element of its own and simply went where its carrier was moved.
+                StateText = IsBuiltIn ? "Moved with " + (slots.FirstOrDefault(s => s.IsBuiltIn)?.CarrierLabel ?? "its carrier") : "Manually modified";
+            }
             else if (placed >= expected) { StateKind = "ok"; StateGlyph = "✓"; StateText = "Placed"; }
             else if (placed > 0) { StateKind = "warn"; StateGlyph = "◐"; StateText = placed + " of " + expected + " placed"; }
             else if (slots.Any(s => s.HasErrors)) { StateKind = "error"; StateGlyph = "✗"; StateText = "Cannot be placed"; }
@@ -211,6 +217,7 @@ namespace Sentinel.UI.ViewModels
                 if (edited.HeightReference != b.HeightReference) ov.HeightReference = edited.HeightReference;
                 if (edited.Orientation != b.Orientation) ov.Orientation = edited.Orientation;
                 if (Math.Abs(edited.RotationDeg - b.RotationDeg) > 1e-6) ov.RotationDeg = edited.RotationDeg;
+                if (!string.IsNullOrEmpty(edited.CarrierRuleId) && edited.CarrierRuleId != b.CarrierRuleId) ov.CarrierRuleId = edited.CarrierRuleId; // keep this door's carrier choice
                 if (component != null && component.Id != template.ComponentDefinitionId) ov.ComponentDefinitionId = component.Id;
                 else if (component == null) ov.ComponentDefinitionId = inst.Overrides?.Find(RuleId)?.ComponentDefinitionId; // keep a swapped component
 
@@ -218,6 +225,53 @@ namespace Sentinel.UI.ViewModels
                 if (!ov.IsEmpty) DoorSetInstanceOperations.OverrideRule(inst, ov);
             }
             return true;
+        }
+
+        // ------------------------------------------------------------------ built in: which carrier on this door
+
+        private List<Option<string>> _carrierChoices = new List<Option<string>>();
+
+        /// <summary>This door's components that can carry it (e.g. both magnets); set by the panel after building rows.</summary>
+        public List<Option<string>> CarrierChoices => _carrierChoices;
+
+        /// <summary>Only when there is a real choice: built into another component and the door has 2+ of those.</summary>
+        public bool ShowsCarrierChoice => _carrierChoices.Count > 1 && !IsRemoved;
+
+        public Option<string> CarrierChoice
+        {
+            get => _carrierChoices.FirstOrDefault(o => o.Value == _effective.Rule?.CarrierRuleId) ?? _carrierChoices.FirstOrDefault();
+            set
+            {
+                if (value == null || _owner.Instance == null || value.Value == CarrierChoice?.Value) return;
+                var inst = _owner.Instance;
+                var added = AddedSlot;
+                if (added != null)
+                {
+                    added.Rule = (added.Rule ?? new PlacementRule()).Clone();
+                    added.Rule.CarrierRuleId = value.Value;
+                    inst.Touch();
+                }
+                else
+                {
+                    var template = TemplateSlot;
+                    if (template == null) return;
+                    var ov = inst.Overrides?.Find(RuleId)?.Clone() ?? new ComponentRuleOverride { RuleId = RuleId };
+                    // Same as the set type (or its automatic first choice): no override needed.
+                    var setChoice = template.Rule?.CarrierRuleId ?? _carrierChoices.FirstOrDefault()?.Value;
+                    ov.CarrierRuleId = value.Value == setChoice ? null : value.Value;
+                    DoorSetInstanceOperations.ClearRuleOverride(inst, RuleId);
+                    if (!ov.IsEmpty) DoorSetInstanceOperations.OverrideRule(inst, ov);
+                }
+                _owner.Changed("choose carrier " + Label);
+                _owner.Main.SetStatus(Label + " on this door is now built into " + value.Text.Split('·')[0].Trim() +
+                                      (inst.HasPlacedElements ? " – use Update placement (or Place) to switch it in the model." : "."));
+            }
+        }
+
+        internal void SetCarrierChoices(List<Option<string>> choices)
+        {
+            _carrierChoices = choices ?? new List<Option<string>>();
+            OnPropertiesChanged(nameof(CarrierChoices), nameof(ShowsCarrierChoice), nameof(CarrierChoice));
         }
 
         // ------------------------------------------------------------------ position moved in the model
@@ -327,6 +381,7 @@ namespace Sentinel.UI.ViewModels
         {
             foreach (var r in _records.Where(r => r.State == ComponentState.ManuallyModified))
                 DoorSetInstanceOperations.AcceptManualPosition(r);
+            DoorSetInstanceOperations.FollowCarriers(_owner.Instance); // a lock built into this component is accepted with it
             _owner.Changed("accept manual position");
         }
 

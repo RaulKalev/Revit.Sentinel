@@ -102,6 +102,28 @@ namespace Sentinel.UI.ViewModels
         /// One-line rule summary for collapsed rows, e.g. "Latch jamb +150 mm · Unsecured side · 1000 mm from bottom".
         /// <paramref name="defaultHeight"/> is shown when the rule leaves the height to the component.
         /// </summary>
+        /// <summary>
+        /// Choices for "Built into": each carrier as "label · where it goes". Carriers with the same label (two magnets
+        /// both called "Door Contact") are numbered in set order so they can be told apart.
+        /// </summary>
+        public static List<Option<string>> CarrierOptions(IEnumerable<Tuple<string, string, string>> carriers)
+        {
+            var list = (carriers ?? Enumerable.Empty<Tuple<string, string, string>>()).ToList(); // (rule id, label, summary)
+            var counts = list.GroupBy(c => c.Item2 ?? "", StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
+            var seen = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var result = new List<Option<string>>();
+            foreach (var c in list)
+            {
+                var label = c.Item2 ?? "";
+                int n;
+                seen.TryGetValue(label, out n);
+                seen[label] = ++n;
+                var name = counts[label] > 1 ? label + " " + n : label;
+                result.Add(new Option<string>(c.Item1, name + " · " + c.Item3));
+            }
+            return result;
+        }
+
         public static string RuleSummary(PlacementRule rule, double? defaultHeight)
         {
             if (rule == null) return "";

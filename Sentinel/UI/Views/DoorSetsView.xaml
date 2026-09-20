@@ -322,6 +322,21 @@
                                                         </Style>
                                                     </TextBlock.Style>
                                                 </TextBlock>
+                                                <!--  Built in, and the set has several carriers (e.g. two magnets): which one holds it  -->
+                                                <DockPanel Margin="0,0,0,10" Visibility="{Binding ShowsCarrierChoice, Converter={StaticResource BoolToVis}}">
+                                                    <TextBlock
+                                                        Margin="0,0,10,0"
+                                                        VerticalAlignment="Center"
+                                                        Style="{StaticResource Type.Secondary}"
+                                                        Text="Built into" />
+                                                    <ComboBox
+                                                        AutomationProperties.Name="Built into"
+                                                        DisplayMemberPath="Text"
+                                                        ItemsSource="{Binding CarrierChoices}"
+                                                        SelectedItem="{Binding CarrierChoice}"
+                                                        Style="{StaticResource Input.Combo}"
+                                                        ToolTip="Which of this set's components carries it, e.g. the magnet on the latch side" />
+                                                </DockPanel>
                                                 <views:RuleEditorControl DataContext="{Binding Editor}" />
                                             </StackPanel>
                                         </StackPanel>

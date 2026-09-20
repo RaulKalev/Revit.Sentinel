@@ -68,7 +68,8 @@ namespace Sentinel.Core.Status
             var anyPlaced = components.Any(c => !string.IsNullOrEmpty(c.ElementUniqueId));
             var missing = components.Where(c => c.State == ComponentState.Missing).ToList();
             var failed = components.Where(c => c.State == ComponentState.Failed).ToList();
-            var manual = components.Where(c => c.State == ComponentState.ManuallyModified && !c.ManualPositionAccepted).ToList();
+            // Built-in components move with their carrier; the carrier already reports the move.
+            var manual = components.Where(c => c.State == ComponentState.ManuallyModified && !c.ManualPositionAccepted && !c.IsBuiltIn).ToList();
 
             // ---- collect reasons ----
             if (ctx.Definition == null)

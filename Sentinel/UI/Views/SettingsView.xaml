@@ -86,6 +86,96 @@
                             </StackPanel>
                         </DockPanel>
                         <Rectangle Style="{StaticResource Hairline}" />
+                        <DockPanel Style="{StaticResource SettingRow}">
+                            <Border
+                                VerticalAlignment="Center"
+                                DockPanel.Dock="Right"
+                                Style="{StaticResource Segmented}">
+                                <StackPanel Orientation="Horizontal">
+                                    <Button
+                                        AutomationProperties.Name="Zoom out further in floor plans"
+                                        Command="{Binding PlanZoomOutCommand}"
+                                        Style="{StaticResource Button.Icon}"
+                                        ToolTip="Show more around the door">
+                                        <materialDesign:PackIcon Width="15" Height="15" Kind="Minus" />
+                                    </Button>
+                                    <TextBlock
+                                        Width="52"
+                                        VerticalAlignment="Center"
+                                        AutomationProperties.Name="Floor plan zoom amount"
+                                        Foreground="{DynamicResource Text.Primary}"
+                                        Text="{Binding PlanZoomText}"
+                                        TextAlignment="Center" />
+                                    <Button
+                                        AutomationProperties.Name="Zoom in closer in floor plans"
+                                        Command="{Binding PlanZoomInCommand}"
+                                        Style="{StaticResource Button.Icon}"
+                                        ToolTip="Get closer to the door">
+                                        <materialDesign:PackIcon Width="15" Height="15" Kind="Plus" />
+                                    </Button>
+                                </StackPanel>
+                            </Border>
+                            <StackPanel Margin="0,10,16,10" VerticalAlignment="Center">
+                                <TextBlock Foreground="{DynamicResource Text.Primary}" Text="Zoom amount in floor plans" />
+                                <TextBlock
+                                    Margin="0,2,0,0"
+                                    Style="{StaticResource Type.Caption}"
+                                    Text="100 % is the standard view of the door and its surroundings; higher gets closer." />
+                            </StackPanel>
+                        </DockPanel>
+                        <Rectangle Style="{StaticResource Hairline}" />
+                        <DockPanel Style="{StaticResource SettingRow}">
+                            <TextBox
+                                Width="200"
+                                VerticalAlignment="Center"
+                                AutomationProperties.Name="Preferred floor plan name keywords"
+                                DockPanel.Dock="Right"
+                                Style="{StaticResource Input.Text}"
+                                Tag="e.g. Security, EL"
+                                Text="{Binding PlanNameKeywords, UpdateSourceTrigger=PropertyChanged, Delay=300}"
+                                ToolTip="Words in the floor plan name, separated by commas; the first one wins" />
+                            <StackPanel Margin="0,10,16,10" VerticalAlignment="Center">
+                                <TextBlock Foreground="{DynamicResource Text.Primary}" Text="Prefer floor plans named" />
+                                <TextBlock
+                                    Margin="0,2,0,0"
+                                    Style="{StaticResource Type.Caption}"
+                                    Text="Plans whose name contains one of these words are opened first. Empty: the active or a similar plan."
+                                    TextWrapping="Wrap" />
+                            </StackPanel>
+                        </DockPanel>
+                        <Rectangle Style="{StaticResource Hairline}" />
+                        <DockPanel Style="{StaticResource SettingRow}">
+                            <Border
+                                VerticalAlignment="Center"
+                                DockPanel.Dock="Right"
+                                Style="{StaticResource Segmented}">
+                                <StackPanel Orientation="Horizontal">
+                                    <Button
+                                        AutomationProperties.Name="Zoom out further in 3D"
+                                        Command="{Binding View3DZoomOutCommand}"
+                                        Style="{StaticResource Button.Icon}"
+                                        ToolTip="Show more around the door (the section box grows too)">
+                                        <materialDesign:PackIcon Width="15" Height="15" Kind="Minus" />
+                                    </Button>
+                                    <TextBlock
+                                        Width="52"
+                                        VerticalAlignment="Center"
+                                        AutomationProperties.Name="3D zoom amount"
+                                        Foreground="{DynamicResource Text.Primary}"
+                                        Text="{Binding View3DZoomText}"
+                                        TextAlignment="Center" />
+                                    <Button
+                                        AutomationProperties.Name="Zoom in closer in 3D"
+                                        Command="{Binding View3DZoomInCommand}"
+                                        Style="{StaticResource Button.Icon}"
+                                        ToolTip="Get closer to the door">
+                                        <materialDesign:PackIcon Width="15" Height="15" Kind="Plus" />
+                                    </Button>
+                                </StackPanel>
+                            </Border>
+                            <TextBlock Style="{StaticResource RowLabel}" Text="Zoom amount in 3D" />
+                        </DockPanel>
+                        <Rectangle Style="{StaticResource Hairline}" />
                         <CheckBox
                             Margin="14,12"
                             Content="In 3D, use the active 3D view instead of the 'Sentinel Focus' view"

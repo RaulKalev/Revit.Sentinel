@@ -206,14 +206,31 @@
                             Visibility="{Binding IsBuiltIn, Converter={StaticResource BoolToVis}}">
                             <StackPanel>
                                 <TextBlock Style="{StaticResource FieldLabel}" Text="Carried by" />
-                                <ComboBox
+                                <TextBlock
+                                    Margin="0,0,0,6"
+                                    Style="{StaticResource Type.Caption}"
+                                    Text="Tick every component whose Revit family contains this one. They all use the parameters below."
+                                    TextWrapping="Wrap" />
+                                <ItemsControl
                                     Margin="0,0,0,12"
                                     AutomationProperties.Name="Carried by"
-                                    DisplayMemberPath="Name"
-                                    ItemsSource="{Binding CarrierChoices}"
-                                    SelectedItem="{Binding Carrier}"
-                                    Style="{StaticResource Input.Combo}"
-                                    ToolTip="The component whose Revit family contains this one" />
+                                    ItemsSource="{Binding CarrierChoices}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <CheckBox
+                                                Margin="0,0,16,6"
+                                                AutomationProperties.Name="{Binding Name}"
+                                                Content="{Binding Name}"
+                                                IsChecked="{Binding IsChecked}"
+                                                Style="{StaticResource Input.Check}" />
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />

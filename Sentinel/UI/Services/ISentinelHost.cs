@@ -215,6 +215,12 @@ namespace Sentinel.UI.Services
         public List<PlacementDoorResult> Doors { get; set; } = new List<PlacementDoorResult>();
         public string FatalError { get; set; }
 
+        /// <summary>
+        /// Source doors of the placed sets as read (and compared after placement) during this run. The UI merges these
+        /// instead of running a full refresh afterwards, which re-read every door of the project and took seconds.
+        /// </summary>
+        public Dictionary<string, SourceCheck> Sources { get; set; } = new Dictionary<string, SourceCheck>();
+
         public int Count(PlacementOutcome o)
         {
             var n = 0;

@@ -203,7 +203,13 @@ namespace Sentinel.UI.ViewModels
                 // While previewing, the workspace stays on the preview door; picking a queued door jumps to it.
                 if (Preview.IsActive)
                 {
-                    if (value?.Instance != null) Preview.TryGoTo(value.Instance.Id);
+                    if (value?.Instance == null) return;
+                    Preview.TryGoTo(value.Instance.Id);
+                    // The click was only "go to this door": drop the selection right away, so a later refresh (e.g.
+                    // after placing) cannot restore it and pull the review back to this row.
+                    System.Windows.Threading.Dispatcher.CurrentDispatcher.BeginInvoke(
+                        new Action(() => { if (Preview.IsActive) SelectKeys(new List<string>()); }),
+                        System.Windows.Threading.DispatcherPriority.Background);
                     return;
                 }
                 Inspector.Load(value);
@@ -295,6 +301,7 @@ namespace Sentinel.UI.ViewModels
             OnPropertiesChanged(nameof(ZoomText), nameof(ZoomAlternativeText), nameof(IsAlternativeZoom3D)); // setting may have changed
             ReloadDefinitions();
             UpdateRows();
+            RereadIfParametersChanged();
         }
 
         /// <summary>First load: list links, restore the stored discovery settings and run discovery + refresh.</summary>
@@ -364,7 +371,25 @@ namespace Sentinel.UI.ViewModels
 
         // ------------------------------------------------------------------ discovery / refresh
 
-        private void FindDoors()
+        private void FindDoors() => FindDoors(null);
+
+        /// <summary>Captured-parameter names added in Settings since the doors were last read.</summary>
+        public bool ParametersOutOfDate =>
+            Session.DiscoveredDoors.Count > 0 &&
+            (Project.Settings.CapturedParameterNames ?? new List<string>()).Any(n => !string.IsNullOrWhiteSpace(n) && !Session.ParametersRead.Contains(n, StringComparer.OrdinalIgnoreCase));
+
+        /// <summary>
+        /// Doors carry the parameter values read when they were found, so a newly captured parameter (e.g. for a rule)
+        /// has no value until the doors are read again. Does that automatically with the same links and levels.
+        /// </summary>
+        public void RereadIfParametersChanged()
+        {
+            if (!ParametersOutOfDate || _main.IsBusy || Preview.IsActive || SelectedLinks.Count == 0) return;
+            FindDoors("Reading the new captured parameters from the doors…");
+        }
+
+        /// <param name="rereadText">Busy text when discovery re-runs to read newly captured parameters (null = Find doors).</param>
+        private void FindDoors(string rereadText)
         {
             var links = SelectedLinks;
             if (links.Count == 0) return;
@@ -391,7 +416,8 @@ namespace Sentinel.UI.ViewModels
             s.DiscoverySkipWindowTypes = req.SkipWindowTypes;
             if (settingsChanged && _main.IsEditable && !_main.Host.IsNewProject) _main.MarkDirty("discovery settings");
 
-            _main.BeginBusy(links.Count == 1 ? "Finding doors in " + links[0].ShortName + "…" : "Finding doors in " + links.Count + " linked models…");
+            var readingParameters = (Project.Settings.CapturedParameterNames ?? new List<string>()).ToList();
+            _main.BeginBusy(rereadText ?? (links.Count == 1 ? "Finding doors in " + links[0].ShortName + "…" : "Finding doors in " + links.Count + " linked models…"));
             _main.Host.DiscoverDoors(req, result =>
             {
                 _main.EndBusy();
@@ -401,10 +427,12 @@ namespace Sentinel.UI.ViewModels
                     return;
                 }
                 Session.DiscoveredDoors = result.Doors;
+                Session.ParametersRead = readingParameters;
                 Session.DiscoveryLinkName = result.LinkName;
                 RebuildRows();
                 var msg = result.Doors.Count + " door(s) found" +
                           (result.CountsByLink.Count > 1 ? " (" + string.Join(", ", result.CountsByLink) + ")." : " in " + result.LinkName + ".");
+                if (rereadText != null) msg = "New captured parameters read. " + msg;
                 if (result.Warnings.Count > 0) msg += " " + string.Join(" ", result.Warnings);
                 var leftOut = Rows.Count(r => r.IsLeftOutDuplicate);
                 if (leftOut > 0) msg += " " + leftOut + " door(s) are also in a higher-priority model and are listed under Ignored.";
@@ -475,7 +503,9 @@ namespace Sentinel.UI.ViewModels
 
         public void RebuildRows()
         {
-            var keep = _selectedRows.Select(r => r.Key).ToList();
+            // During a review a selected row means "go to this door", so restoring it after a refresh (e.g. after
+            // placing) would jump the review back. The review keeps its own position instead.
+            var keep = Preview.IsActive ? new List<string>() : _selectedRows.Select(r => r.Key).ToList();
             DuplicatePriority.Apply(Session.DiscoveredDoors, Project.Settings.LinkPriority);
             var matches = DoorMatcher.Match(Session.DiscoveredDoors, Project.DoorSetInstances);
 
@@ -683,12 +713,16 @@ namespace Sentinel.UI.ViewModels
         /// <summary>
         /// Marks doors as needing no access control. Doors with placed components ask first: the components are deleted.
         /// </summary>
-        public void MarkNoAccessControl(IList<DoorRowViewModel> rows)
+        /// <param name="done">Called with true once the doors are marked; false when nothing was marked (cancelled, failed).</param>
+        /// <param name="ask">False: delete placed components without asking (a decision made door by door in the review;
+        /// Revit's Undo brings them back).</param>
+        public void MarkNoAccessControl(IList<DoorRowViewModel> rows, Action<bool> done = null, bool ask = true)
         {
             rows = (rows ?? new List<DoorRowViewModel>()).Where(r => r.Status != SetStatus.NoAccessControl).ToList();
             if (rows.Count == 0)
             {
                 _main.SetStatus("The selected doors are already marked as no access control.");
+                done?.Invoke(false);
                 return;
             }
             Action mark = () =>
@@ -709,29 +743,38 @@ namespace Sentinel.UI.ViewModels
             {
                 mark();
                 _main.SetStatus(rows.Count + " door(s) marked as no access control.");
+                done?.Invoke(true);
                 return;
             }
             var n = placed.Sum(r => r.Instance.Components.Count(c => !string.IsNullOrEmpty(c.ElementUniqueId)));
+            Action<bool> proceed = ok =>
+            {
+                if (!ok) { done?.Invoke(false); return; }
+                _main.CancelPendingSave();
+                _main.BeginBusy("Deleting components…");
+                _main.Host.DeletePlacedComponents(placed.Select(r => r.Instance.Id).ToList(), true, r =>
+                {
+                    _main.EndBusy();
+                    if (!r.Success)
+                    {
+                        _main.SetStatus(r.Message, true);
+                        UpdateRows();
+                        done?.Invoke(false);
+                        return;
+                    }
+                    mark();
+                    _main.SetStatus(rows.Count + " door(s) marked as no access control; " + r.Message);
+                    done?.Invoke(true);
+                });
+            };
+            if (!ask)
+            {
+                proceed(true);
+                return;
+            }
             _main.Dialogs.Confirm("No access control",
                 "Mark " + rows.Count + " door(s) as no access control?\n\n" + placed.Count + " of them have placed components; " + n +
-                " element(s) will be deleted from the model.", null, "Mark and delete " + n + " element(s)", "Cancel", ok =>
-                {
-                    if (!ok) return;
-                    _main.CancelPendingSave();
-                    _main.BeginBusy("Deleting components…");
-                    _main.Host.DeletePlacedComponents(placed.Select(r => r.Instance.Id).ToList(), true, r =>
-                    {
-                        _main.EndBusy();
-                        if (!r.Success)
-                        {
-                            _main.SetStatus(r.Message, true);
-                            UpdateRows();
-                            return;
-                        }
-                        mark();
-                        _main.SetStatus(rows.Count + " door(s) marked as no access control; " + r.Message);
-                    });
-                });
+                " element(s) will be deleted from the model.", null, "Mark and delete " + n + " element(s)", "Cancel", proceed);
         }
 
         private void Ignore()
@@ -903,6 +946,10 @@ namespace Sentinel.UI.ViewModels
             {
                 _main.EndBusy();
                 if (result.FatalError == null) _main.OnSavedByOperation();
+                // The placement read these doors fresh; no full refresh afterwards (it re-read every door in the
+                // project and froze Revit for seconds after each placement). Refresh still checks everything.
+                foreach (var kv in result.Sources ?? new Dictionary<string, SourceCheck>())
+                    if (kv.Value != null) Session.SourceChecks[kv.Key] = kv.Value;
                 UpdateRows();
 
                 var details = new StringBuilder();
@@ -914,12 +961,14 @@ namespace Sentinel.UI.ViewModels
 
                 var isError = result.FatalError != null || result.Count(PlacementOutcome.Failed) > 0;
                 _main.SetStatus(result.Summary, isError);
-                if (after == null || isError || result.Count(PlacementOutcome.NeedsReview) > 0)
+                // In a review (Confirmed) warnings go to the status line and the review moves on; only errors stop it.
+                if (after == null || isError || (mode != PlacementMode.Confirmed && result.Count(PlacementOutcome.NeedsReview) > 0))
                 {
                     _main.Dialogs.Show(mode == PlacementMode.Update ? "Update placement" : "Placement result",
                         result.Summary, details.Length > 0 ? details.ToString() : null, isError);
                 }
-                RefreshStatus(() => after?.Invoke(result), result.Summary, isError);
+                RelayCommand.Requery();
+                after?.Invoke(result);
             });
         }
 

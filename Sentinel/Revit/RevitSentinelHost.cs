@@ -10,6 +10,7 @@ using Sentinel.Core.Library;
 using Sentinel.Core.Models;
 using Sentinel.Core.Persistence;
 using Sentinel.Core.Placement;
+using Sentinel.Core.Status;
 using Sentinel.Infrastructure;
 using Sentinel.Revit.Collectors;
 using Sentinel.Revit.Placement;
@@ -329,8 +330,12 @@ namespace Sentinel.Revit
 
             var sources = DoorDiscoveryService.VerifySources(_doc, instances, Project.Settings);
             // Placement never trusts an old measurement: walls in the links may have changed since the preview.
-            var wallNote = UpdateWallClearances(instances, sources);
-            if (wallNote != null) SentinelLog.Info(wallNote);
+            // (Off by default: it made placement slow. A separate clash check will replace it.)
+            if (Project.Settings.CheckWallClearance)
+            {
+                var wallNote = UpdateWallClearances(instances, sources);
+                if (wallNote != null) SentinelLog.Info(wallNote);
+            }
             var ctx = new PlacementContext
             {
                 Doc = _doc,
@@ -379,6 +384,20 @@ namespace Sentinel.Revit
                     return batch;
                 }
                 group.Assimilate();
+            }
+
+            // Hand the door data read above back to the UI, compared again now that placement may have accepted
+            // source changes. The UI updates from this instead of re-reading the whole project.
+            foreach (var inst in instances)
+            {
+                SourceCheck sc;
+                if (!sources.TryGetValue(inst.Id, out sc)) continue;
+                if (sc.Current != null)
+                {
+                    sc.Comparison = SourceChangeDetector.Compare(inst.Source, sc.Current.Geometry, sc.Current.Current.LastKnownParameters, Project.Settings);
+                    sc.State = sc.Comparison.HasChanges ? SourceState.Changed : SourceState.Ok;
+                }
+                batch.Sources[inst.Id] = sc;
             }
             return batch;
         }
@@ -471,7 +490,8 @@ namespace Sentinel.Revit
                 {
                     if (uidoc.ActiveView.Id != plan.Id) uidoc.ActiveView = plan;
                     var planView = uidoc.GetOpenUIViews().FirstOrDefault(v => v.ViewId == plan.Id);
-                    planView?.ZoomAndCenterRectangle(padded.Min, padded.Max);
+                    var area = Scale(padded, ZoomLevels.AreaFactor(Project.Settings.PlanZoomPercent), false);
+                    planView?.ZoomAndCenterRectangle(area.Min, area.Max);
                     return null;
                 }
                 Focus3D(uidoc, padded);
@@ -485,7 +505,8 @@ namespace Sentinel.Revit
         /// <summary>
         /// A floor plan of the door's level, staying close to what the user works in: the active plan when it is on
         /// that level, else a plan with the same view template / view type as the active plan, else the first plan of
-        /// the level. Plans whose crop region does not contain the door are skipped.
+        /// the level. Plans whose crop region does not contain the door are skipped; plans named with a keyword from
+        /// Settings (PlanNameKeywords) are preferred over all others.
         /// </summary>
         private ViewPlan FindFloorPlan(UIDocument uidoc, BoundingBoxXYZ box, out string why)
         {
@@ -506,6 +527,8 @@ namespace Sentinel.Revit
                 why = "No floor plan of " + level.Name + " shows this door.";
                 return null;
             }
+            // Plans named with a preferred keyword (Settings) come first; the rules below choose among them.
+            plans = PlanKeywords.Preferred(plans, p => p.Name, PlanKeywords.Parse(Project.Settings.PlanNameKeywords));
 
             var active = uidoc.ActiveView as ViewPlan;
             if (active != null && plans.Any(p => p.Id == active.Id)) return active;
@@ -539,6 +562,10 @@ namespace Sentinel.Revit
         /// <summary>Zooms in the active 3D view (if allowed by settings) or in the Sentinel Focus view with a section box.</summary>
         private void Focus3D(UIDocument uidoc, BoundingBoxXYZ padded)
         {
+            // Zoomed out: the section box grows too, so there is more to see; zoomed in it keeps the standard size.
+            var factor = ZoomLevels.AreaFactor(Project.Settings.View3DZoomPercent);
+            var sectionBox = factor > 1 ? Scale(padded, factor, false) : padded;
+            var area = Scale(padded, factor, true);
             View3D view = null;
             if (Project.Settings.PreviewInActiveView) view = uidoc.ActiveView as View3D;
             if (view == null || view.IsTemplate)
@@ -548,13 +575,23 @@ namespace Sentinel.Revit
                 {
                     t.Start();
                     view.IsSectionBoxActive = true;
-                    view.SetSectionBox(padded);
+                    view.SetSectionBox(sectionBox);
                     t.Commit();
                 }
             }
             if (uidoc.ActiveView.Id != view.Id) uidoc.ActiveView = view;
             var uiView = uidoc.GetOpenUIViews().FirstOrDefault(v => v.ViewId == view.Id);
-            uiView?.ZoomAndCenterRectangle(padded.Min, padded.Max);
+            uiView?.ZoomAndCenterRectangle(area.Min, area.Max);
+        }
+
+        /// <summary>The box scaled about its centre (horizontally, and vertically when <paramref name="withZ"/>).</summary>
+        private static BoundingBoxXYZ Scale(BoundingBoxXYZ b, double factor, bool withZ)
+        {
+            if (b == null || Math.Abs(factor - 1) < 1e-6) return b;
+            var c = (b.Min + b.Max) / 2.0;
+            var h = (b.Max - b.Min) / 2.0 * factor;
+            var hz = withZ ? h.Z : (b.Max.Z - b.Min.Z) / 2.0;
+            return new BoundingBoxXYZ { Min = new XYZ(c.X - h.X, c.Y - h.Y, c.Z - hz), Max = new XYZ(c.X + h.X, c.Y + h.Y, c.Z + hz) };
         }
 
         // ------------------------------------------------------------------ families

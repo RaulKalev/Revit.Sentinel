@@ -222,11 +222,14 @@ namespace Sentinel.UI.ViewModels
                 if (!string.IsNullOrWhiteSpace(inst?.LastError) && !Issues.Any(i => i.Message.Contains(inst.LastError)))
                     Issues.Add(new IssueItem { Severity = IssueSeverity.Error, Message = "Last placement: " + inst.LastError });
 
-                SetChoices.Add(new SetChoice());
-                foreach (var d in Project.DoorSetDefinitions.OrderBy(d => d.Code, StringComparer.OrdinalIgnoreCase)) SetChoices.Add(new SetChoice { Definition = d });
+                // In the review a set cannot be removed (only changed or marked no access control), so "(no set)" is
+                // offered outside it only. No access control comes first: it is the one quick decision per door.
+                var reviewing = _doors.Preview.IsActive;
+                if (!reviewing) SetChoices.Add(new SetChoice());
                 SetChoices.Add(new SetChoice { Definition = NoAccessControlChoice.Definition });
+                foreach (var d in Project.DoorSetDefinitions.OrderBy(d => d.Code, StringComparer.OrdinalIgnoreCase)) SetChoices.Add(new SetChoice { Definition = d });
                 if (inst != null && inst.IsNoAccessControl) def = NoAccessControlChoice.Definition;
-                _selectedSet = SetChoices.FirstOrDefault(c => c.Definition != null && c.Definition == def) ?? SetChoices[0];
+                _selectedSet = SetChoices.FirstOrDefault(c => c.Definition != null && c.Definition == def) ?? (reviewing ? null : SetChoices[0]);
 
                 var a = SentinelSession.SideName(src, true);
                 var b = SentinelSession.SideName(src, false);
@@ -294,6 +297,16 @@ namespace Sentinel.UI.ViewModels
                 Components.Add(vm);
             }
 
+            // Built-in components with several possible carriers on this door (e.g. two magnets) offer the choice.
+            foreach (var e in effective.Where(x => x.Component != null && x.Component.IsBuiltIn && x.Component.Carriers.Count > 0))
+            {
+                var vm = Components.FirstOrDefault(c => c.RuleId == e.RuleId);
+                if (vm == null) continue;
+                vm.SetCarrierChoices(UiChoices.CarrierOptions(effective
+                    .Where(x => x.RuleId != e.RuleId && (x.Component == null || !x.Component.IsBuiltIn) && e.Component.IsCarriedBy(x.ComponentDefinitionId))
+                    .Select(x => Tuple.Create(x.RuleId, x.DisplayLabel, UiChoices.RuleSummary(x.Rule, x.Component?.DefaultMountingHeightMm)))));
+            }
+
             // Template components removed on this door (can be restored).
             foreach (var removedId in inst.Overrides?.RemovedRuleIds ?? new List<string>())
             {
@@ -335,8 +348,20 @@ namespace Sentinel.UI.ViewModels
             {
                 if (_doors.Preview.IsActive)
                 {
-                    _main.SetStatus("Exit the preview to mark this door as no access control.", true);
-                    Load(_row);
+                    // Decided in the review: mark it (no question – this is the per-door decision, Undo restores placed
+                    // components) and continue with the next door. Run after the dropdown has finished its own
+                    // selection change: moving on reloads this panel, and doing that inside the dropdown's selection
+                    // event can leave the review on the old door or the picker in the wrong state.
+                    var row = _row;
+                    var marked = row.Instance;
+                    var removed = row.HasPlacedElements;
+                    System.Windows.Threading.Dispatcher.CurrentDispatcher.BeginInvoke(new Action(() =>
+                        _doors.MarkNoAccessControl(new List<DoorRowViewModel> { row }, ok =>
+                        {
+                            if (ok) _doors.Preview.OnMarkedNoAccessControl(marked, removed);
+                            else if (_row == row) Load(row); // failed: the picker shows the set again
+                        }, ask: false)),
+                        System.Windows.Threading.DispatcherPriority.Background);
                     return;
                 }
                 _doors.MarkNoAccessControl(new List<DoorRowViewModel> { _row });

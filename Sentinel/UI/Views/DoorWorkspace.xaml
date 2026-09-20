@@ -9,8 +9,8 @@
     <!--
         One review workspace for inspection and preview (DataContext: DoorsViewModel).
         Sticky header = which door, its state and issues (+ preview position and navigation while previewing).
-        Scrolling middle = adjustments (set, direction, hinge, components, source, notes).
-        Sticky footer = the confirmation for the preview (Skip / Place and next).
+        Scrolling middle = components, source door and notes.
+        Sticky footer = set, direction, flip and hinge, plus the preview confirmation (Skip / Place and next).
     -->
     <UserControl.Resources>
         <ResourceDictionary>
@@ -291,66 +291,16 @@
                         Fill="{DynamicResource Separator}" />
                 </StackPanel>
 
-                <!--  ================= Sticky footer (preview confirmation) =================  -->
+                <!--  ================= Sticky footer: door set decisions + preview confirmation =================  -->
+                <!--  Set, direction, flip and hinge stay in one place right above Skip / Place, so a review is
+                      decided without scrolling back up for every door.  -->
                 <Border
                     Padding="14,10"
                     BorderBrush="{DynamicResource Separator}"
                     BorderThickness="0,1,0,0"
-                    DataContext="{Binding DataContext.Preview, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                    DockPanel.Dock="Bottom"
-                    Visibility="{Binding IsActive, Converter={StaticResource BoolToVis}}">
-                    <DockPanel>
-                        <StackPanel VerticalAlignment="Center" Orientation="Horizontal">
-                            <Button
-                                AutomationProperties.Name="Previous door"
-                                Command="{Binding PreviousCommand}"
-                                Style="{StaticResource Button.Icon}"
-                                ToolTip="Previous door (Alt+Left)">
-                                <materialDesign:PackIcon
-                                    Width="18"
-                                    Height="18"
-                                    Kind="ChevronLeft" />
-                            </Button>
-                            <Button
-                                AutomationProperties.Name="Next door"
-                                Command="{Binding NextCommand}"
-                                Style="{StaticResource Button.Icon}"
-                                ToolTip="Next door without placing (Alt+Right)">
-                                <materialDesign:PackIcon
-                                    Width="18"
-                                    Height="18"
-                                    Kind="ChevronRight" />
-                            </Button>
-                        </StackPanel>
-                        <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
-                            <Button
-                                Margin="0,0,8,0"
-                                Command="{Binding SkipCommand}"
-                                Content="{Binding SkipText}"
-                                Style="{StaticResource Button.Secondary}"
-                                ToolTip="Leave this door unchanged and continue" />
-                            <Button
-                                x:Name="ConfirmButton"
-                                MinWidth="120"
-                                Command="{Binding ConfirmCommand}"
-                                Content="{Binding ConfirmText}"
-                                Style="{StaticResource Button.Primary}"
-                                ToolTip="Write this door's components to the model as previewed, then show the next door" />
-                        </StackPanel>
-                    </DockPanel>
-                </Border>
-
-                <!--  ================= Scrolling content =================  -->
-                <ScrollViewer
-                    x:Name="Scroll"
-                    HorizontalScrollBarVisibility="Disabled"
-                    VerticalScrollBarVisibility="Auto">
-                    <StackPanel x:Name="ScrollContent" Margin="16,14,16,16">
-
-                        <!--  Door set  -->
-                        <TextBlock Style="{StaticResource SectionHeader}" Text="Door set" />
+                    DockPanel.Dock="Bottom">
+                    <StackPanel>
                         <ComboBox
-                            Margin="0,0,0,8"
                             AutomationProperties.Name="Door set"
                             DisplayMemberPath="Text"
                             IsEnabled="{Binding IsEditable}"
@@ -359,15 +309,14 @@
                             Style="{StaticResource Input.Combo}"
                             ToolTip="Door set for this door (changes update the preview immediately)" />
                         <TextBlock
-                            Margin="0,0,0,8"
+                            Margin="0,6,0,0"
                             Style="{StaticResource Type.Secondary}"
                             Text="Decided: this door needs no access control, so nothing is placed. Choose a door set to change it."
                             TextWrapping="Wrap"
                             Visibility="{Binding IsNoAccessControl, Converter={StaticResource BoolToVis}}" />
-
                         <StackPanel Visibility="{Binding HasInstance, Converter={StaticResource BoolToVis}}">
                             <ComboBox
-                                Margin="0,0,0,8"
+                                Margin="0,6,0,0"
                                 AutomationProperties.Name="Access direction"
                                 DisplayMemberPath="Text"
                                 IsEnabled="{Binding IsEditable}"
@@ -375,10 +324,9 @@
                                 SelectedItem="{Binding SelectedDirection}"
                                 Style="{StaticResource Input.Combo}"
                                 ToolTip="Controlled access direction: from the unsecured side into the secured side" />
-                            <!--  Door corrections: same weight as the review buttons  -->
-                            <UniformGrid Margin="0,0,0,4" Columns="2">
+                            <UniformGrid Margin="0,6,0,0" Columns="2">
                                 <Button
-                                    Margin="0,0,4,0"
+                                    Margin="0,0,3,0"
                                     Command="{Binding FlipCommand}"
                                     Style="{StaticResource Button.Secondary}"
                                     ToolTip="Flip: swap the secured and unsecured sides">
@@ -388,7 +336,7 @@
                                     </StackPanel>
                                 </Button>
                                 <Button
-                                    Margin="4,0,0,0"
+                                    Margin="3,0,0,0"
                                     Command="{Binding SwapHingeCommand}"
                                     Style="{StaticResource Button.Secondary}"
                                     ToolTip="{Binding HingeText}">
@@ -398,9 +346,64 @@
                                     </StackPanel>
                                 </Button>
                             </UniformGrid>
+                        </StackPanel>
 
-                            <!--  Components  -->
-                            <DockPanel Margin="0,18,0,8">
+                        <!--  Preview confirmation (only while reviewing)  -->
+                        <DockPanel
+                            Margin="0,10,0,0"
+                            DataContext="{Binding DataContext.Preview, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                            Visibility="{Binding IsActive, Converter={StaticResource BoolToVis}}">
+                            <StackPanel VerticalAlignment="Center" Orientation="Horizontal">
+                                <Button
+                                    AutomationProperties.Name="Previous door"
+                                    Command="{Binding PreviousCommand}"
+                                    Style="{StaticResource Button.Icon}"
+                                    ToolTip="Previous door (Alt+Left)">
+                                    <materialDesign:PackIcon
+                                        Width="18"
+                                        Height="18"
+                                        Kind="ChevronLeft" />
+                                </Button>
+                                <Button
+                                    AutomationProperties.Name="Next door"
+                                    Command="{Binding NextCommand}"
+                                    Style="{StaticResource Button.Icon}"
+                                    ToolTip="Next door without placing (Alt+Right)">
+                                    <materialDesign:PackIcon
+                                        Width="18"
+                                        Height="18"
+                                        Kind="ChevronRight" />
+                                </Button>
+                            </StackPanel>
+                            <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+                                <Button
+                                    Margin="0,0,8,0"
+                                    Command="{Binding SkipCommand}"
+                                    Content="{Binding SkipText}"
+                                    Style="{StaticResource Button.Secondary}"
+                                    ToolTip="Leave this door unchanged and continue" />
+                                <Button
+                                    x:Name="ConfirmButton"
+                                    MinWidth="120"
+                                    Command="{Binding ConfirmCommand}"
+                                    Content="{Binding ConfirmText}"
+                                    Style="{StaticResource Button.Primary}"
+                                    ToolTip="Write this door's components to the model as previewed, then show the next door" />
+                            </StackPanel>
+                        </DockPanel>
+                    </StackPanel>
+                </Border>
+
+                <!--  ================= Scrolling content =================  -->
+                <ScrollViewer
+                    x:Name="Scroll"
+                    HorizontalScrollBarVisibility="Disabled"
+                    VerticalScrollBarVisibility="Auto">
+                    <StackPanel x:Name="ScrollContent" Margin="16,14,16,16">
+
+                        <StackPanel Visibility="{Binding HasInstance, Converter={StaticResource BoolToVis}}">
+                            <!--  Components (the set, direction and hinge are in the footer)  -->
+                            <DockPanel Margin="0,0,0,8">
                                 <TextBlock
                                     DockPanel.Dock="Right"
                                     Style="{StaticResource Type.Caption}"

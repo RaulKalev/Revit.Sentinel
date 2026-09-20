@@ -144,6 +144,7 @@ namespace Sentinel.Core.Placement
                 rec.ManualPositionAccepted = false;
                 rec.ManualPositionAcceptedAt = null;
             }
+            DoorSetInstanceOperations.FollowCarriers(inst); // components built into it (a lock in the magnet) come along
 
             if (before == null || inst.PlacedConfigurationHash != before.ConfigurationHash) return;
             var adopted = new HashSet<string>(inst.Components.Where(c => SlotRule(c.SlotKey) == ruleId && c.State == ComponentState.Placed &&

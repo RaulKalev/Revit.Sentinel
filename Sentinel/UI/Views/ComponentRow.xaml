@@ -180,6 +180,21 @@
                     Text="{Binding FamilyText}"
                     TextWrapping="Wrap"
                     Visibility="{Binding IsBuiltIn, Converter={StaticResource BoolToVis}}" />
+                <!--  Several possible carriers on this door (e.g. two magnets): choose the one that holds it  -->
+                <DockPanel Margin="0,6,0,0" Visibility="{Binding ShowsCarrierChoice, Converter={StaticResource BoolToVis}}">
+                    <TextBlock
+                        Margin="0,0,8,0"
+                        VerticalAlignment="Center"
+                        Style="{StaticResource Type.Secondary}"
+                        Text="Built into" />
+                    <ComboBox
+                        AutomationProperties.Name="Built into"
+                        DisplayMemberPath="Text"
+                        ItemsSource="{Binding CarrierChoices}"
+                        SelectedItem="{Binding CarrierChoice}"
+                        Style="{StaticResource Input.Combo}"
+                        ToolTip="Which component on this door carries it (e.g. the magnet on the latch side)" />
+                </DockPanel>
                 <!--  A missing family blocks placement, so it is never hidden  -->
                 <TextBlock
                     Margin="0,4,0,0"

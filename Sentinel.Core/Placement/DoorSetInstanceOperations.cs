@@ -157,6 +157,7 @@ namespace Sentinel.Core.Placement
             if (values.Orientation.HasValue) target.Orientation = values.Orientation;
             if (values.RotationDeg.HasValue) target.RotationDeg = values.RotationDeg;
             if (!string.IsNullOrEmpty(values.ComponentDefinitionId)) target.ComponentDefinitionId = values.ComponentDefinitionId;
+            if (!string.IsNullOrEmpty(values.CarrierRuleId)) target.CarrierRuleId = values.CarrierRuleId;
             inst.Touch();
         }
 
@@ -186,6 +187,37 @@ namespace Sentinel.Core.Placement
             c.ManualPositionAcceptedAt = c.ActualPosition;
             c.ManualRotationAcceptedDeg = c.ActualRotationDeg;
             if (c.State == ComponentState.ManuallyModified) c.State = ComponentState.Placed;
+        }
+
+        /// <summary>
+        /// Components built into another component's family (a lock inside the magnet contact) share the carrier's
+        /// element, so they have no position of their own: their records take over the carrier record's pose, state and
+        /// accepted manual position. Moving, accepting or re-using the carrier's position therefore applies to them too.
+        /// Returns how many records changed.
+        /// </summary>
+        public static int FollowCarriers(DoorSetInstance inst)
+        {
+            if (inst?.Components == null) return 0;
+            var changed = 0;
+            foreach (var rec in inst.Components.Where(c => c.IsBuiltIn && !string.IsNullOrEmpty(c.ElementUniqueId)))
+            {
+                var carrier = inst.Components.FirstOrDefault(c => !c.IsBuiltIn && c.ElementUniqueId == rec.ElementUniqueId);
+                if (carrier == null) continue;
+                var before = rec.State + "|" + rec.ManualPositionAccepted + "|" + rec.PlacedPosition + "|" + rec.ActualPosition + "|" +
+                             rec.ManualPositionAcceptedAt + "|" + rec.PlacedRotationDeg + "|" + rec.ActualRotationDeg;
+                rec.State = carrier.State;
+                rec.PlacedPosition = carrier.PlacedPosition;
+                rec.PlacedRotationDeg = carrier.PlacedRotationDeg;
+                rec.ActualPosition = carrier.ActualPosition;
+                rec.ActualRotationDeg = carrier.ActualRotationDeg;
+                rec.ManualPositionAccepted = carrier.ManualPositionAccepted;
+                rec.ManualPositionAcceptedAt = carrier.ManualPositionAcceptedAt;
+                rec.ManualRotationAcceptedDeg = carrier.ManualRotationAcceptedDeg;
+                var after = rec.State + "|" + rec.ManualPositionAccepted + "|" + rec.PlacedPosition + "|" + rec.ActualPosition + "|" +
+                            rec.ManualPositionAcceptedAt + "|" + rec.PlacedRotationDeg + "|" + rec.ActualRotationDeg;
+                if (before != after) changed++;
+            }
+            return changed;
         }
     }
 }

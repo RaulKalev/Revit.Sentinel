@@ -77,14 +77,52 @@ namespace Sentinel.UI.ViewModels
         private string BuiltInText(ComponentDefinition c)
         {
             if (!c.IsBuiltInConfigured) return "Part of another component – not set up yet (Components page)";
-            var carrier = _owner.Project.FindComponent(c.CarrierComponentId);
-            var inSet = carrier != null && _owner.Rows.Any(r => r.Component != null && r.Component.Id == carrier.Id);
-            return "Built into " + (carrier?.Name ?? "another component") + " (“" + c.CarrierParameterLeft + "” / “" + c.CarrierParameterRight + "”)" +
-                   (inSet ? "" : c.UseOwnFamilyAsBackup && c.IsFamilyConfigured ? " – this set has none, so its own family is used" : " – this set has no " + (carrier?.Name ?? "carrier"));
+            var carriers = c.Carriers.Select(_owner.Project.FindComponent).Where(x => x != null).ToList();
+            var names = carriers.Count == 0 ? "another component" : string.Join(" or ", carriers.Select(x => x.Name));
+            // The set's own carrier is named when it has one; otherwise all possible ones.
+            var inSet = carriers.FirstOrDefault(x => _owner.Rows.Any(r => r.Component != null && r.Component.Id == x.Id));
+            return "Built into " + (inSet?.Name ?? names) + " (“" + c.CarrierParameterLeft + "” / “" + c.CarrierParameterRight + "”)" +
+                   (inSet != null ? "" : c.UseOwnFamilyAsBackup && c.IsFamilyConfigured ? " – this set has none, so its own family is used" : " – this set has no " + (carriers.Count == 0 ? "carrier" : names));
         }
 
         /// <summary>One-line placement summary for the collapsed row.</summary>
         public string Summary => UiChoices.RuleSummary(Editor.ToRule() ?? Slot.Rule, Component?.DefaultMountingHeightMm);
+
+        // ---- built-in component: which of several carriers (e.g. two magnets) holds it ----
+        private List<Option<string>> _carrierChoices = new List<Option<string>>();
+
+        /// <summary>The set's components of the carrier type, e.g. both magnets ("Door Contact · latch jamb …").</summary>
+        public List<Option<string>> CarrierChoices => _carrierChoices;
+
+        /// <summary>Only asked when there is a real choice: the component is built in and the set has 2+ carriers.</summary>
+        public bool ShowsCarrierChoice => _carrierChoices.Count > 1;
+
+        public Option<string> CarrierChoice
+        {
+            get => _carrierChoices.FirstOrDefault(o => o.Value == Slot.Rule?.CarrierRuleId) ?? _carrierChoices.FirstOrDefault();
+            set
+            {
+                if (value == null || Slot.Rule == null || Slot.Rule.CarrierRuleId == value.Value) return;
+                Slot.Rule.CarrierRuleId = value.Value;
+                Editor.CarrierRuleId = value.Value;
+                OnPropertyChanged();
+                _owner.OnEdited("choose carrier");
+            }
+        }
+
+        internal void RefreshCarrierChoices()
+        {
+            var c = Component;
+            var next = c == null || !c.IsBuiltIn || c.Carriers.Count == 0
+                ? new List<Option<string>>()
+                : UiChoices.CarrierOptions(_owner.Rows
+                    .Where(r => r != this && r.Component != null && !r.Component.IsBuiltIn && c.IsCarriedBy(r.Component.Id))
+                    .Select(r => Tuple.Create(r.Slot.Id, string.IsNullOrWhiteSpace(r.Label) ? r.Component.Name : r.Label, r.Summary)));
+            // Keep the same list while nothing changed, so an open dropdown is not reset by unrelated edits.
+            if (next.Select(o => o.Value + "|" + o.Text).SequenceEqual(_carrierChoices.Select(o => o.Value + "|" + o.Text))) return;
+            _carrierChoices = next;
+            OnPropertiesChanged(nameof(CarrierChoices), nameof(ShowsCarrierChoice), nameof(CarrierChoice));
+        }
 
         /// <summary>Expanded rows show the full editor; the page remembers which rows are open across reloads.</summary>
         public bool IsExpanded
@@ -220,6 +258,7 @@ namespace Sentinel.UI.ViewModels
             if (_selected != null)
                 foreach (var slot in _selected.Components) Rows.Add(new SetComponentRowViewModel(this, slot));
             _loading = false;
+            RefreshCarrierChoices();
             if (SelectedAdd == null) SelectedAdd = ComponentChoices.FirstOrDefault();
             RefreshAll();
             RelayCommand.Requery();
@@ -231,6 +270,13 @@ namespace Sentinel.UI.ViewModels
             _selected.Touch();
             _main.MarkDirty(reason);
             OnPropertyChanged(nameof(UsageText));
+            RefreshCarrierChoices();
+        }
+
+        /// <summary>Built-in rows list the set's carriers (e.g. both magnets); rows, labels and rules change them.</summary>
+        internal void RefreshCarrierChoices()
+        {
+            foreach (var r in Rows) r.RefreshCarrierChoices();
         }
 
         internal void RemoveRow(SetComponentRowViewModel row)

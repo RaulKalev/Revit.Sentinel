@@ -103,6 +103,38 @@ namespace Sentinel.UI.ViewModels
             set { if (value && S.ZoomView != DoorZoomView.FloorPlan) { S.ZoomView = DoorZoomView.FloorPlan; Edited(); OnPropertiesChanged(nameof(ZoomInFloorPlan), nameof(ZoomIn3D)); } }
         }
 
+        /// <summary>Preferred floor plan name keywords, as typed (e.g. "Security, EL"); parsed when a plan is chosen.</summary>
+        public string PlanNameKeywords
+        {
+            get => S.PlanNameKeywords ?? "";
+            set
+            {
+                if ((S.PlanNameKeywords ?? "") == (value ?? "")) return;
+                S.PlanNameKeywords = value;
+                Edited();
+                OnPropertyChanged();
+            }
+        }
+
+        // ---- zoom amount per view (stepper: 25 % … 400 %, 100 % = standard framing) ----
+        public string PlanZoomText => ZoomLevels.Clamp(S.PlanZoomPercent).ToString("0") + " %";
+        public string View3DZoomText => ZoomLevels.Clamp(S.View3DZoomPercent).ToString("0") + " %";
+
+        public RelayCommand PlanZoomInCommand => _planIn ?? (_planIn = new RelayCommand(() => StepZoom(true, +1), () => IsEditable && ZoomLevels.Clamp(S.PlanZoomPercent) < ZoomLevels.Max));
+        public RelayCommand PlanZoomOutCommand => _planOut ?? (_planOut = new RelayCommand(() => StepZoom(true, -1), () => IsEditable && ZoomLevels.Clamp(S.PlanZoomPercent) > ZoomLevels.Min));
+        public RelayCommand View3DZoomInCommand => _3dIn ?? (_3dIn = new RelayCommand(() => StepZoom(false, +1), () => IsEditable && ZoomLevels.Clamp(S.View3DZoomPercent) < ZoomLevels.Max));
+        public RelayCommand View3DZoomOutCommand => _3dOut ?? (_3dOut = new RelayCommand(() => StepZoom(false, -1), () => IsEditable && ZoomLevels.Clamp(S.View3DZoomPercent) > ZoomLevels.Min));
+        private RelayCommand _planIn, _planOut, _3dIn, _3dOut;
+
+        private void StepZoom(bool plan, int direction)
+        {
+            if (plan) S.PlanZoomPercent = ZoomLevels.Step(S.PlanZoomPercent, direction);
+            else S.View3DZoomPercent = ZoomLevels.Step(S.View3DZoomPercent, direction);
+            Edited();
+            OnPropertiesChanged(nameof(PlanZoomText), nameof(View3DZoomText));
+            RelayCommand.Requery();
+        }
+
         public bool ZoomIn3D
         {
             get => S.ZoomView == DoorZoomView.View3D;

@@ -51,7 +51,7 @@ namespace Sentinel.Core.Placement
                 Components = components,
                 Settings = project.Settings ?? new SentinelSettings(),
                 FindComponent = project.FindComponent,
-                WallClearances = applyWallClearances ? instance?.WallClearances : null
+                WallClearances = applyWallClearances && project.Settings != null && project.Settings.CheckWallClearance ? instance?.WallClearances : null
             });
             if (definition == null && instance != null && !string.IsNullOrEmpty(instance.DefinitionId))
             {
@@ -98,13 +98,9 @@ namespace Sentinel.Core.Placement
 
             var usesHinge = (input.Components ?? new List<EffectiveComponent>()).Any(c =>
                 c.Rule != null && (c.Rule.Reference != PlacementReference.DoorCenter || Math.Abs(c.Rule.AlongWallOffsetMm) > 0.01));
-            if (hingeAssumed && usesHinge)
-            {
-                plan.HingeAssumed = true;
-                plan.Issues.Add(new StatusIssue(IssueSeverity.Warning, IssueCodes.HingeAssumed,
-                    "Hinge side is unknown for this door and was assumed (" + HingeText(hinge) +
-                    "). Check the preview and use 'Swap hinge side' if needed."));
-            }
+            // No warning: every placement is confirmed in the review, where a wrong hinge side is seen and swapped.
+            // (A warning would also mark each such placement "needs review" and stop the review from moving on.)
+            if (hingeAssumed && usesHinge) plan.HingeAssumed = true;
 
             if (door.Source == DoorGeometrySource.EstimatedFromGeometry)
             {
@@ -313,17 +309,21 @@ namespace Sentinel.Core.Placement
                 var def = find(p.ComponentDefinitionId);
                 if (def == null || !def.IsBuiltIn) continue;
 
-                var carrierDef = find(def.CarrierComponentId);
-                var carrierName = carrierDef?.Name ?? "the carrier component";
-                var carrier = carrierDef == null || carrierDef.IsBuiltIn
-                    ? null
-                    : plan.Placements
-                        .Where(c => c != p && c.ComponentDefinitionId == def.CarrierComponentId)
-                        .OrderBy(c => c.IsMirrorCopy == p.IsMirrorCopy ? 0 : 1)
-                        .FirstOrDefault();
+                // Any of the carrier components can hold it (they share the left/right parameters).
+                var carrierDefs = def.Carriers.Select(find).Where(c => c != null && !c.IsBuiltIn).ToList();
+                var carrierName = carrierDefs.Count == 0 ? "the carrier component" : string.Join(" or ", carrierDefs.Select(c => c.Name));
+                var candidates = plan.Placements.Where(c => c != p && carrierDefs.Any(cd => cd.Id == c.ComponentDefinitionId)).ToList();
+                // With several carriers (e.g. two magnets) the rule can name the one that holds this component.
+                var wanted = (input.Components ?? new List<EffectiveComponent>()).FirstOrDefault(c => c?.RuleId == p.RuleId)?.Rule?.CarrierRuleId;
+                var chosen = string.IsNullOrEmpty(wanted) ? candidates : candidates.Where(c => c.RuleId == wanted).ToList();
+                var chosenMissing = !string.IsNullOrEmpty(wanted) && chosen.Count == 0 && candidates.Count > 0;
+                if (chosenMissing) chosen = candidates; // the chosen one was removed from this door: fall back to the first
+                var carrier = chosen
+                    .OrderBy(c => c.IsMirrorCopy == p.IsMirrorCopy ? 0 : 1)
+                    .FirstOrDefault();
 
                 string why = null;
-                if (string.IsNullOrWhiteSpace(def.CarrierComponentId)) why = "no carrier component is chosen (Components page)";
+                if (def.Carriers.Count == 0) why ="no carrier component is chosen (Components page)";
                 else if (string.IsNullOrWhiteSpace(def.CarrierParameterLeft) || string.IsNullOrWhiteSpace(def.CarrierParameterRight))
                     why = "the left/right parameters of " + carrierName + " are not set (Components page)";
                 else if (carrier == null) why = "this door set has no " + carrierName;
@@ -346,6 +346,9 @@ namespace Sentinel.Core.Placement
                     p.TypeName = null;
                     p.Explanation += " → built into " + carrier.Label + ": “" + p.CarrierParameter + "” on (" +
                                      (isRight ? "right" : "left") + " of the " + carrier.Label + " seen from its front)";
+                    if (chosenMissing)
+                        p.Issues.Add(new StatusIssue(IssueSeverity.Info, IssueCodes.BuiltInFallback,
+                            p.Label + ": the " + carrierName + " chosen to carry it is not on this door; built into " + carrier.Label + " instead.", p.SlotKey));
                     continue;
                 }
 

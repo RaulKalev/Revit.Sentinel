@@ -128,6 +128,23 @@ namespace Sentinel.UI.ViewModels
                 _main.SetStatus("Assign a door set before previewing.", true);
                 return;
             }
+            Action begin = () =>
+            {
+                _queue.Clear();
+                _queue.AddRange(ids);
+                _outcomes.Clear();
+                IsActive = true;
+                // The rows chose what to review; from now on the review decides which door is shown. A selection left
+                // in the list would pull the review back to that row whenever the list refreshes.
+                _doors.SelectKeys(new List<string>());
+                Go(0);
+            };
+            if (!Project.Settings.CheckWallClearance)
+            {
+                begin();
+                return;
+            }
+
             // Components inside a wall of another model (lining, split walls) are moved out first, so the preview shows
             // where they will really go.
             _main.BeginBusy("Checking walls around the doors…");
@@ -140,11 +157,7 @@ namespace Sentinel.UI.ViewModels
                     _main.MarkDirty("wall clearance");
                     _main.SetStatus(r.Message);
                 }
-                _queue.Clear();
-                _queue.AddRange(ids);
-                _outcomes.Clear();
-                IsActive = true;
-                Go(0);
+                begin();
             });
         }
 
@@ -157,7 +170,8 @@ namespace Sentinel.UI.ViewModels
             _doors.UpdateRows();
             var placed = _outcomes.Values.Count(v => v.StartsWith("Placed") || v.StartsWith("Updated"));
             var skipped = _outcomes.Values.Count(v => v == "Skipped");
-            _main.SetStatus("Preview closed. " + placed + " confirmed, " + skipped + " skipped.");
+            var none = _outcomes.Values.Count(v => v == "No access control");
+            _main.SetStatus("Preview closed. " + placed + " confirmed, " + skipped + " skipped" + (none > 0 ? ", " + none + " no access control." : "."));
             RefreshAll();
             RelayCommand.Requery();
         }
@@ -178,6 +192,7 @@ namespace Sentinel.UI.ViewModels
             if (!_isActive || inst == null || Current == null || inst.Id != Current.Id) return;
             Load();
             Push(false);
+            if (!Project.Settings.CheckWallClearance) return;
             // A flip or a new component may put something on a wall that was not measured yet.
             _main.Host.CheckWallClearances(new List<string> { inst.Id }, r =>
             {
@@ -186,6 +201,24 @@ namespace Sentinel.UI.ViewModels
                 Load();
                 Push(false);
             });
+        }
+
+        /// <summary>The current door was marked "No access control" during the review: record that and move on.</summary>
+        /// <param name="componentsRemoved">Placed components were deleted with it (said in the status line; Undo restores them).</param>
+        public void OnMarkedNoAccessControl(DoorSetInstance inst, bool componentsRemoved = false)
+        {
+            if (!_isActive || inst == null || Current == null || Current.Id != inst.Id) return;
+            _outcomes[inst.Id] = "No access control";
+            var door = DoorTitle;
+            var hadNext = HasNext;
+            if (hadNext) Advance();
+            else
+            {
+                Load();
+                Push(false); // nothing to place here any more: clears its preview graphics
+            }
+            _main.SetStatus(door + " marked as no access control" + (componentsRemoved ? "; its placed components were removed (Undo in Revit brings them back)" : "") +
+                            (hadNext ? "." : ". That was the last door of this review."));
         }
 
         private void Load()
@@ -329,7 +362,15 @@ namespace Sentinel.UI.ViewModels
                 _outcomes[inst.Id] = d == null ? "Failed" :
                     d.Outcome == PlacementOutcome.Failed ? "Failed: " + string.Join(" ", d.Messages) :
                     (wasPlaced ? "Updated" : "Placed") + (d.Outcome == PlacementOutcome.NeedsReview ? " (needs review)" : "");
-                if (d != null && (d.Outcome == PlacementOutcome.Placed || d.Outcome == PlacementOutcome.NoChanges)) Advance();
+                // Placed with warnings is still placed: say what the warning was and continue with the next door.
+                // Only a failed placement keeps the review on this door.
+                if (d != null && d.Outcome == PlacementOutcome.NeedsReview)
+                {
+                    var door = DoorTitle;
+                    Advance();
+                    _main.SetStatus(door + " placed with a warning: " + string.Join(" ", d.Messages.Where(m => !string.IsNullOrWhiteSpace(m)).Take(2)));
+                }
+                else if (d != null && (d.Outcome == PlacementOutcome.Placed || d.Outcome == PlacementOutcome.NoChanges)) Advance();
                 else
                 {
                     Load();

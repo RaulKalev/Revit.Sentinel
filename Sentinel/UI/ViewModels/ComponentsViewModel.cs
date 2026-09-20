@@ -37,6 +37,29 @@ namespace Sentinel.UI.ViewModels
         }
     }
 
+    /// <summary>One component in the "Carried by" list of a built-in component, ticked when it can carry it.</summary>
+    public class CarrierChoiceViewModel : ObservableObject
+    {
+        private readonly ComponentsViewModel _owner;
+        private bool _isChecked;
+
+        public CarrierChoiceViewModel(ComponentsViewModel owner, ComponentDefinition component, bool isChecked)
+        {
+            _owner = owner;
+            Component = component;
+            _isChecked = isChecked;
+        }
+
+        public ComponentDefinition Component { get; }
+        public string Name => Component.Name;
+
+        public bool IsChecked
+        {
+            get => _isChecked;
+            set { if (Set(ref _isChecked, value)) _owner.SetCarrier(Component, value); }
+        }
+    }
+
     /// <summary>Component library page: device definitions, family/type mapping and default placement.</summary>
     public class ComponentsViewModel : ObservableObject, IDataErrorInfo
     {
@@ -179,8 +202,10 @@ namespace Sentinel.UI.ViewModels
             if (m == ComponentModelling.BuiltIntoOtherComponent)
             {
                 // Sensible starting point: the first door contact carries it; lock parameters as used in the RK families.
-                if (string.IsNullOrEmpty(_selected.CarrierComponentId))
-                    _selected.CarrierComponentId = CarrierChoices.FirstOrDefault(c => c.Category == ComponentCategory.DoorContact)?.Id;
+                if (_selected.Carriers.Count == 0)
+                    _selected.CarrierComponentId = Project.ComponentDefinitions
+                        .Where(c => c != _selected && !c.IsBuiltIn && c.Category == ComponentCategory.DoorContact)
+                        .OrderBy(c => c.Name).FirstOrDefault()?.Id;
                 if (_selected.Category == ComponentCategory.ElectricLock)
                 {
                     if (string.IsNullOrWhiteSpace(_selected.CarrierParameterLeft)) _selected.CarrierParameterLeft = "Lukk vasakul";
@@ -191,21 +216,29 @@ namespace Sentinel.UI.ViewModels
             OnBuiltInChanged();
         }
 
-        /// <summary>Components that can carry this one (not itself, not other built-in components).</summary>
-        public List<ComponentDefinition> CarrierChoices => _selected == null
-            ? new List<ComponentDefinition>()
-            : Project.ComponentDefinitions.Where(c => c != _selected && !c.IsBuiltIn).OrderBy(c => c.Name).ToList();
+        /// <summary>
+        /// Components that can carry this one (not itself, not other built-in components), each ticked when it does.
+        /// Several can be ticked (e.g. two magnet contact types); they share the left/right parameters.
+        /// </summary>
+        public List<CarrierChoiceViewModel> CarrierChoices => _selected == null
+            ? new List<CarrierChoiceViewModel>()
+            : Project.ComponentDefinitions.Where(c => c != _selected && !c.IsBuiltIn).OrderBy(c => c.Name)
+                .Select(c => new CarrierChoiceViewModel(this, c, _selected.IsCarriedBy(c.Id))).ToList();
 
-        public ComponentDefinition Carrier
+        /// <summary>The ticked carriers, in the order they were ticked.</summary>
+        public List<ComponentDefinition> Carriers => _selected == null
+            ? new List<ComponentDefinition>()
+            : _selected.Carriers.Select(Project.FindComponent).Where(c => c != null).ToList();
+
+        internal void SetCarrier(ComponentDefinition carrier, bool carries)
         {
-            get => _selected == null ? null : Project.FindComponent(_selected.CarrierComponentId);
-            set
-            {
-                if (_loading || _selected == null || value == null || _selected.CarrierComponentId == value.Id) return;
-                _selected.CarrierComponentId = value.Id;
-                OnEdited("carrier component");
-                OnBuiltInChanged();
-            }
+            if (_loading || _selected == null || carrier == null || _selected.IsCarriedBy(carrier.Id) == carries) return;
+            var ids = _selected.Carriers;
+            if (carries) ids.Add(carrier.Id);
+            else ids.Remove(carrier.Id);
+            _selected.CarrierComponentIds = ids;
+            OnEdited("carrier component");
+            OnBuiltInChanged();
         }
 
         public string CarrierParameterLeft
@@ -264,14 +297,16 @@ namespace Sentinel.UI.ViewModels
             get
             {
                 if (_selected == null || !_selected.IsBuiltIn) return "";
-                var carrier = Carrier;
-                if (carrier == null) return "Choose the component whose family contains the " + _selected.Name + ".";
-                if (!_selected.IsBuiltInConfigured) return "Enter both Yes/No parameters of the " + carrier.Name + " family.";
-                var backup = !_selected.UseOwnFamilyAsBackup ? "Door sets without a " + carrier.Name + " report an error." :
-                    _selected.IsFamilyConfigured ? "Door sets without a " + carrier.Name + " place the own family below instead." :
-                    "Door sets without a " + carrier.Name + " report an error until an own family is mapped below.";
+                var carriers = Carriers;
+                if (carriers.Count == 0) return "Choose the component whose family contains the " + _selected.Name + ".";
+                var names = string.Join(" or ", carriers.Select(c => c.Name));
+                var families = carriers.Count == 1 ? "the " + names + " family" : "the " + names + " families (all of them use the same parameters)";
+                if (!_selected.IsBuiltInConfigured) return "Enter both Yes/No parameters of " + families + ".";
+                var backup = !_selected.UseOwnFamilyAsBackup ? "Door sets without a " + names + " report an error." :
+                    _selected.IsFamilyConfigured ? "Door sets without a " + names + " place the own family below instead." :
+                    "Door sets without a " + names + " report an error until an own family is mapped below.";
                 return "Sentinel switches “" + _selected.CarrierParameterRight + "” on when the " + _selected.Name +
-                       " is to the right of the " + carrier.Name + " (seen from the front of its family), or “" +
+                       " is to the right of the " + names + " (seen from the front of its family), or “" +
                        _selected.CarrierParameterLeft + "” when it is to the left. " + backup;
             }
         }
@@ -281,7 +316,7 @@ namespace Sentinel.UI.ViewModels
 
         private void OnBuiltInChanged()
         {
-            OnPropertiesChanged(nameof(IsOwnFamily), nameof(IsBuiltIn), nameof(Carrier), nameof(CarrierChoices), nameof(CarrierParameterLeft),
+            OnPropertiesChanged(nameof(IsOwnFamily), nameof(IsBuiltIn), nameof(Carriers), nameof(CarrierChoices), nameof(CarrierParameterLeft),
                 nameof(CarrierParameterRight), nameof(SwapCarrierSides), nameof(UseOwnFamilyAsBackup), nameof(BuiltInIsOk),
                 nameof(BuiltInSummary), nameof(FamilySectionTitle), nameof(MappingText), nameof(MappingIsOk));
             RefreshList();

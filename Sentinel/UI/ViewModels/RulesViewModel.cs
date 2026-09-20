@@ -69,7 +69,7 @@ namespace Sentinel.UI.ViewModels
             NewCommand = new RelayCommand(New, () => IsEditable);
             DeleteCommand = new RelayCommand(Delete, () => IsEditable && _selected != null);
             AddConditionCommand = new RelayCommand(AddCondition, () => IsEditable && _selected != null);
-            TestCommand = new RelayCommand(Test, () => _selected != null && _main.Doors.SelectedRow != null);
+            TestCommand = new RelayCommand(Test, () => _selected != null && _main.Doors.SelectedRow != null && !_main.IsBusy);
         }
 
         private SentinelProject Project => _main.Session.Project;
@@ -150,6 +150,7 @@ namespace Sentinel.UI.ViewModels
         {
             OnPropertiesChanged(nameof(Definitions), nameof(FieldChoices), nameof(TestTarget));
             TestResult = null;
+            _main.Doors.RereadIfParametersChanged(); // a rule may use a parameter that was just added
         }
 
         public static string Describe(AssignmentRule r, SentinelProject p)
@@ -238,8 +239,20 @@ namespace Sentinel.UI.ViewModels
             string explanation;
             var match = AssignmentRuleEvaluator.Matches(_selected, facts, out explanation);
             var winner = AssignmentRuleEvaluator.Suggest(Project.AssignmentRules, facts);
-            TestResult = row.Mark + ": this rule " + (match ? "MATCHES (" + explanation + ")" : "does not match") + ".\n" +
-                         "Overall suggestion: " + (winner == null ? "none" : Project.FindSetChoice(winner.DefinitionId)?.DisplayName + " – " + winner.Explanation);
+            var lines = new List<string> { row.Mark + ": this rule " + (match ? "matches." : "does not match.") };
+            lines.AddRange(AssignmentRuleEvaluator.ExplainConditions(_selected, facts).Select(l => "   " + l));
+            // A parameter without a value: usually a name that differs from Revit, or one that is not captured.
+            var captured = Project.Settings.CapturedParameterNames ?? new List<string>();
+            var missing = (_selected?.Conditions ?? new List<RuleCondition>())
+                .Where(c => !string.IsNullOrWhiteSpace(c.Field) && !DoorFacts.BuiltInFields.Contains(c.Field, StringComparer.OrdinalIgnoreCase) &&
+                            string.IsNullOrEmpty(facts[c.Field]))
+                .Select(c => c.Field).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            foreach (var name in missing)
+                lines.Add(captured.Contains(name, StringComparer.OrdinalIgnoreCase)
+                    ? "This door has no value for “" + name + "”. Check that the name matches the parameter in Revit exactly."
+                    : "“" + name + "” is not read from doors: add it under Settings → Captured door parameters.");
+            lines.Add("Overall suggestion: " + (winner == null ? "none" : Project.FindSetChoice(winner.DefinitionId)?.DisplayName + " – " + winner.Explanation));
+            TestResult = string.Join("\n", lines);
         }
     }
 }

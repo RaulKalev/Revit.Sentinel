@@ -54,6 +54,7 @@ namespace Sentinel.Core.Tests
             inst.AccessDirection = dir;
             var g = TestData.StraightDoor(hinge);
             var first = DoorSetPlacementCalculator.Calculate(inst, def, g, p).Placements.First(x => x.Label == "Reader");
+            p.Settings.CheckWallClearance = clearance > 0;
             if (clearance > 0) inst.WallClearances[WallClearance.Key(first.SlotKey, first.Side.ToString())] = clearance;
 
             CalculatedPlacement slot;

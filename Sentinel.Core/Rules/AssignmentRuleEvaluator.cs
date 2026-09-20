@@ -208,6 +208,32 @@ namespace Sentinel.Core.Rules
             }
         }
 
+        /// <summary>
+        /// One line per condition for the rule test: the door's actual value, the check and whether it passed, e.g.
+        /// <c>✓ AR_Uks.001_Nimetus "Teras siseuks kahepoolne" contains "kahepoolne"</c>. A field the door has no value for
+        /// says so, because that usually means the parameter is not captured (or the doors were read before it was).
+        /// </summary>
+        public static List<string> ExplainConditions(AssignmentRule rule, DoorFacts facts)
+        {
+            var lines = new List<string>();
+            foreach (var c in rule?.Conditions ?? new List<RuleCondition>())
+            {
+                if (c == null || string.IsNullOrWhiteSpace(c.Field))
+                {
+                    lines.Add("✗ (condition without a field)");
+                    continue;
+                }
+                var ok = Evaluate(c, facts ?? new DoorFacts());
+                var actual = facts?[c.Field];
+                var value = string.IsNullOrEmpty(actual) ? "(no value on this door)" : "\"" + actual + "\"";
+                var check = c.Operator == RuleOperator.IsEmpty || c.Operator == RuleOperator.IsNotEmpty
+                    ? OperatorText(c.Operator)
+                    : OperatorText(c.Operator) + " \"" + (c.Value ?? "") + "\"";
+                lines.Add((ok ? "✓ " : "✗ ") + c.Field + " " + value + " " + check);
+            }
+            return lines;
+        }
+
         private static string Describe(RuleCondition c, DoorFacts facts)
         {
             var actual = facts[c.Field] ?? "";

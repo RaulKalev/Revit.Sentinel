@@ -144,7 +144,7 @@ namespace Sentinel.Core.Tests
             var plan = Plan(p, inst, TestData.StraightDoor(HingeSide.Unknown));
 
             Assert.True(plan.HingeAssumed);
-            Assert.Contains(plan.Issues, i => i.Code == IssueCodes.HingeAssumed && i.Severity == IssueSeverity.Warning);
+            Assert.DoesNotContain(plan.Issues, i => i.Severity == IssueSeverity.Warning); // confirmed in the review instead
             Assert.Equal(p.Settings.DefaultHingeSide, plan.ResolvedHinge);
         }
 

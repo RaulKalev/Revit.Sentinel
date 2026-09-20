@@ -23,6 +23,9 @@ namespace Sentinel.UI.Services
 
         public List<DiscoveredDoor> DiscoveredDoors { get; set; } = new List<DiscoveredDoor>();
         public string DiscoveryLinkName { get; set; }
+
+        /// <summary>Captured-parameter names the current discovery read (Settings may have more by now).</summary>
+        public List<string> ParametersRead { get; set; } = new List<string>();
         public Dictionary<string, SourceCheck> SourceChecks { get; set; } = new Dictionary<string, SourceCheck>();
         public HashSet<string> PreviewInstanceIds { get; } = new HashSet<string>();
         public bool HasRefreshed { get; set; }

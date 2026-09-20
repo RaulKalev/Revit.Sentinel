@@ -51,8 +51,30 @@ namespace Sentinel.Core.Models
         // ---- built into another component's family ----
         public ComponentModelling Modelling { get; set; } = ComponentModelling.OwnFamily;
 
-        /// <summary>Component whose family contains this one (e.g. the magnet contact that carries the lock).</summary>
-        public string CarrierComponentId { get; set; }
+        /// <summary>
+        /// Components whose family contains this one (e.g. the magnet contacts that can carry the lock). All of them use
+        /// the same left/right parameters below; a door set uses whichever of them it has.
+        /// </summary>
+        public List<string> CarrierComponentIds { get; set; } = new List<string>();
+
+        /// <summary>
+        /// Single carrier as stored before several were allowed: read from older files into
+        /// <see cref="CarrierComponentIds"/>, never written. Setting it replaces the list with that one carrier.
+        /// </summary>
+        public string CarrierComponentId
+        {
+            get => Carriers.FirstOrDefault();
+            set => CarrierComponentIds = string.IsNullOrWhiteSpace(value) ? new List<string>() : new List<string> { value };
+        }
+
+        public bool ShouldSerializeCarrierComponentId() => false;
+
+        /// <summary>The carrier ids without blanks or repeats.</summary>
+        [JsonIgnore]
+        public List<string> Carriers => (CarrierComponentIds ?? new List<string>())
+            .Where(id => !string.IsNullOrWhiteSpace(id)).Distinct().ToList();
+
+        public bool IsCarriedBy(string componentId) => !string.IsNullOrEmpty(componentId) && Carriers.Contains(componentId);
 
         /// <summary>Yes/No instance parameter of the carrier switched on when this component is on its left (seen from the front).</summary>
         public string CarrierParameterLeft { get; set; }
@@ -70,7 +92,7 @@ namespace Sentinel.Core.Models
         public bool IsBuiltIn => Modelling == ComponentModelling.BuiltIntoOtherComponent;
 
         [JsonIgnore]
-        public bool IsBuiltInConfigured => IsBuiltIn && !string.IsNullOrWhiteSpace(CarrierComponentId) &&
+        public bool IsBuiltInConfigured => IsBuiltIn && Carriers.Count > 0 &&
                                            !string.IsNullOrWhiteSpace(CarrierParameterLeft) && !string.IsNullOrWhiteSpace(CarrierParameterRight);
 
         /// <summary>Has everything it needs to be placed: its own family, or a complete built-in setup.</summary>
@@ -94,6 +116,7 @@ namespace Sentinel.Core.Models
             var c = (ComponentDefinition)MemberwiseClone();
             c.DefaultPlacement = DefaultPlacement != null ? DefaultPlacement.Clone() : new PlacementRule();
             c.Parameters = (Parameters ?? new List<ParameterAssignment>()).Select(p => p.Clone()).ToList();
+            c.CarrierComponentIds = (CarrierComponentIds ?? new List<string>()).ToList();
             return c;
         }
     }

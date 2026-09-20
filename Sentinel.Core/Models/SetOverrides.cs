@@ -24,11 +24,14 @@ namespace Sentinel.Core.Models
         public OrientationMode? Orientation { get; set; }
         public double? RotationDeg { get; set; }
 
+        /// <summary>For a built-in component: the set component that carries it on this door (see PlacementRule.CarrierRuleId).</summary>
+        public string CarrierRuleId { get; set; }
+
         [JsonIgnore]
         public bool IsEmpty =>
             string.IsNullOrEmpty(ComponentDefinitionId) && !Reference.HasValue && !Side.HasValue &&
             !AlongWallOffsetMm.HasValue && !FromWallOffsetMm.HasValue && !MountingHeightMm.HasValue &&
-            !HeightReference.HasValue && !Orientation.HasValue && !RotationDeg.HasValue;
+            !HeightReference.HasValue && !Orientation.HasValue && !RotationDeg.HasValue && string.IsNullOrEmpty(CarrierRuleId);
 
         public ComponentRuleOverride Clone() => (ComponentRuleOverride)MemberwiseClone();
     }

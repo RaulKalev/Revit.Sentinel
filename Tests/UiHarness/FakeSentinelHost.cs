@@ -123,11 +123,18 @@ namespace Sentinel.UiHarness
                     }
                 }
             };
+            _allParameters[mark] = new Dictionary<string, string>(d.Current.LastKnownParameters, StringComparer.OrdinalIgnoreCase);
             if (source == DoorGeometrySource.EstimatedFromGeometry) d.ReadWarnings.Add("Door orientation estimated from geometry; hinge side unknown.");
             (interior ? _interiorDoors : _doors).Add(d);
         }
 
         public DiscoveredDoor Door(string mark) => AllDoors.First(d => d.Current.Mark == mark);
+
+        // Every parameter each door has in the "linked model"; discovery reads only the captured ones, like Revit.
+        private readonly Dictionary<string, Dictionary<string, string>> _allParameters = new Dictionary<string, Dictionary<string, string>>();
+
+        /// <summary>Gives a door a parameter in the linked model (read by the next discovery if it is captured).</summary>
+        public void SetParameter(string mark, string name, string value) => _allParameters[mark][name] = value;
 
         /// <summary>Simulates a change in the linked model (door moved).</summary>
         public void MoveDoor(string mark, Vec3 delta)
@@ -179,6 +186,11 @@ namespace Sentinel.UiHarness
                 var name = uid == LinkUid ? "ARH_Model.ifc" : "SIS_Model.ifc";
                 names.Add(name);
                 var found = source.Where(d => request.Scope != DiscoveryScope.SelectedLevels || request.LevelNames.Contains(d.Current.LevelName)).ToList();
+                var captured = Project.Settings.CapturedParameterNames ?? new List<string>();
+                foreach (var d in found)
+                    d.Current.LastKnownParameters = _allParameters[d.Current.Mark]
+                        .Where(kv => captured.Contains(kv.Key, StringComparer.OrdinalIgnoreCase))
+                        .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
                 if (request.SkipWindowTypes)
                 {
                     var before = found.Count;
@@ -194,13 +206,14 @@ namespace Sentinel.UiHarness
             foreach (var d in r.Doors.Where(x => x.PossibleDuplicateOf != null)) d.ReadWarnings.Add("Probably the same door as " + d.PossibleDuplicateOf + ".");
             if (r.SkippedWindowTypes > 0) r.Warnings.Add(r.SkippedWindowTypes + " window type(s) in the Doors category were left out.");
             var estimated = r.Doors.Count(d => d.Geometry.Source == DoorGeometrySource.EstimatedFromGeometry);
-            if (estimated > 0) r.Warnings.Add(estimated + " door(s) use estimated IFC geometry (hinge side unknown).");
+            if (estimated > 0) r.Warnings.Add(estimated + " door(s) use estimated IFC geometry.");
             Log.Add("DISCOVER " + request.Scope + " [" + string.Join(",", request.LinkUniqueIds) + "] → " + r.Doors.Count);
             Post(() => done(r));
         }
 
         public void Refresh(Action<RefreshResult> done)
         {
+            Log.Add("REFRESH (all doors)");
             var r = new RefreshResult { Success = true };
             foreach (var inst in Project.DoorSetInstances)
             {
@@ -375,6 +388,15 @@ namespace Sentinel.UiHarness
                     ? PlacementOutcome.NeedsReview : PlacementOutcome.Placed;
                 inst.ReviewState = result.Outcome == PlacementOutcome.NeedsReview ? ReviewState.NeedsReview :
                     request.Mode == PlacementMode.Confirmed ? ReviewState.Reviewed : ReviewState.NotReviewed;
+                // Like the real host: the door as read for this placement, compared after accepting its changes.
+                var cmp = SourceChangeDetector.Compare(inst.Source, door.Geometry, door.Current.LastKnownParameters, Project.Settings);
+                batch.Sources[id] = new SourceCheck
+                {
+                    InstanceId = id,
+                    Current = door,
+                    Comparison = cmp,
+                    State = cmp.HasChanges ? SourceState.Changed : SourceState.Ok
+                };
             }
             SaveCount++;
             Log.Add("PLACE " + request.Mode + ": " + batch.Summary);

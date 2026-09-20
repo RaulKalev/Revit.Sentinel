@@ -82,6 +82,7 @@ namespace Sentinel.Core.Tests
         public void StoredClearance_MovesTheComponent_OnItsSideOnly_AndChangesTheHash()
         {
             var p = TestData.ProjectWithMappedFamilies();
+            p.Settings.CheckWallClearance = true;
             var inst = TestData.Instance(p, TestData.Ds02(p));
             var def = TestData.Ds02(p);
             var before = DoorSetPlacementCalculator.Calculate(inst, def, TestData.StraightDoor(), p);
@@ -105,6 +106,21 @@ namespace Sentinel.Core.Tests
             DoorSetInstanceOperations.Flip(inst);
             var flipped = DoorSetPlacementCalculator.Calculate(inst, def, TestData.StraightDoor(), p);
             Assert.All(flipped.Placements, x => Assert.Equal(0, x.WallClearanceMm));
+        }
+
+        [Fact]
+        public void WithTheCheckOff_StoredClearancesAreIgnored()
+        {
+            var p = TestData.ProjectWithMappedFamilies();
+            var def = TestData.Ds02(p);
+            var inst = TestData.Instance(p, def);
+            var before = DoorSetPlacementCalculator.Calculate(inst, def, TestData.StraightDoor(), p);
+            var slot = before.Placements.First(x => x.Side == ResolvedSide.SideA);
+            inst.WallClearances[WallClearance.Key(slot.SlotKey, "SideA")] = 45;
+
+            Assert.False(p.Settings.CheckWallClearance); // off by default (slow; a separate clash check will replace it)
+            var after = DoorSetPlacementCalculator.Calculate(inst, def, TestData.StraightDoor(), p);
+            Assert.Equal(before.ConfigurationHash, after.ConfigurationHash);
         }
     }
 }

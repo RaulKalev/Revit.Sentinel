@@ -22,6 +22,10 @@ namespace Sentinel.UI.ViewModels
         private Option<OrientationMode> _orientation;
         private string _rotation = "0";
         private bool _duplicateBoth;
+        private string _carrierRuleId; // not edited here: kept so saving the fields never drops it
+
+        /// <summary>Which set component carries a built-in component (chosen next to the editor, not in it).</summary>
+        public string CarrierRuleId { get => _carrierRuleId; set => _carrierRuleId = value; }
 
         public event EventHandler Edited;
 
@@ -86,6 +90,7 @@ namespace Sentinel.UI.ViewModels
             Orientation = UiChoices.Find(UiChoices.Orientations, rule.Orientation);
             Rotation = NumberText.Format(rule.RotationDeg);
             DuplicateBoth = rule.DuplicateWhenBothDirections;
+            _carrierRuleId = rule.CarrierRuleId;
             _loading = false;
             RefreshAll();
         }
@@ -115,7 +120,8 @@ namespace Sentinel.UI.ViewModels
                 HeightReference = HeightRef?.Value ?? HeightReference.DoorBottom,
                 Orientation = Orientation?.Value ?? OrientationMode.FaceAwayFromWall,
                 RotationDeg = rot,
-                DuplicateWhenBothDirections = DuplicateBoth
+                DuplicateWhenBothDirections = DuplicateBoth,
+                CarrierRuleId = _carrierRuleId
             };
         }
 
